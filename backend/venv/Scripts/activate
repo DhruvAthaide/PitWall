@@ -35,7 +35,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="C:\Users\athai\VSCode\Personal Coding\React Projects\F1FantasyPrediction\backend\venv"
+VIRTUAL_ENV="C:\Users\athai\VSCode\Personal Coding\React Projects\PitWall\backend\venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"

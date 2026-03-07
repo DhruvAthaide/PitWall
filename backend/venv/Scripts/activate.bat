@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set VIRTUAL_ENV=C:\Users\athai\VSCode\Personal Coding\React Projects\F1FantasyPrediction\backend\venv
+set VIRTUAL_ENV=C:\Users\athai\VSCode\Personal Coding\React Projects\PitWall\backend\venv
 
 if not defined PROMPT set PROMPT=$P$G
 
