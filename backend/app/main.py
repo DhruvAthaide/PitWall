@@ -10,7 +10,10 @@ app = FastAPI(title="F1 Fantasy Prediction API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://fantasydrs.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -42,3 +45,8 @@ def startup():
 @app.get("/")
 def root():
     return {"message": "F1 Fantasy Prediction API", "version": "1.0.0"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
