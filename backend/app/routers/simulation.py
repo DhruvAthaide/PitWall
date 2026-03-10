@@ -322,7 +322,7 @@ def get_cached_simulation(race_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/refresh")
+@router.api_route("/refresh", methods=["GET", "POST"])
 async def refresh(db: Session = Depends(get_db)):
     """Auto-ingest results + re-simulate if stale. Called by external cron."""
     from app.services.auto_sim import auto_ingest_results, run_auto_simulation, get_next_race_from_db
