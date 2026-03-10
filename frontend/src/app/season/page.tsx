@@ -19,7 +19,7 @@ export default function SeasonPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-32">
-        <div className="w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: "var(--f1-red)", borderTopColor: "transparent" }} />
       </div>
     );
   }
@@ -33,7 +33,7 @@ export default function SeasonPage() {
         <p className="text-xs sm:text-sm text-gray-500 mt-1">
           Cumulative fantasy points and trends across the season
           {data && data.races_completed > 0 && (
-            <span className="ml-2 text-gray-400">({data.races_completed} race{data.races_completed > 1 ? "s" : ""} recorded)</span>
+            <span className="ml-2" style={{ color: "var(--neon-cyan)" }}>({data.races_completed} race{data.races_completed > 1 ? "s" : ""} recorded)</span>
           )}
         </p>
       </motion.div>
@@ -55,31 +55,35 @@ export default function SeasonPage() {
           {/* Top 3 Podium */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {data.drivers.slice(0, 3).map((d, i) => (
-              <div key={d.driver_id} className="rounded-xl p-4 relative overflow-hidden"
-                style={{
-                  background: i === 0 ? "rgba(225,6,0,0.06)" : "var(--card-bg)",
-                  border: i === 0 ? "1px solid rgba(225,6,0,0.2)" : "1px solid var(--card-border)",
-                }}
+              <div key={d.driver_id}
+                className={`rounded-xl p-4 relative overflow-hidden ${i === 0 ? "glow-red" : "glass-card"}`}
+                style={i === 0 ? {
+                  background: "rgba(225,6,0,0.06)",
+                  border: "1px solid rgba(225,6,0,0.2)",
+                  borderRadius: 12,
+                } : undefined}
               >
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-2xl font-black text-gray-600">#{i + 1}</span>
+                  <span className={`text-lg font-black w-8 h-8 rounded-lg flex items-center justify-center ${i === 0 ? "pos-badge-1" : i === 1 ? "pos-badge-2" : "pos-badge-3"}`}>
+                    {i + 1}
+                  </span>
                   <div className="w-1.5 h-5 rounded-full" style={{ backgroundColor: d.constructor_color }} />
                   <span className="font-bold">{d.name}</span>
                 </div>
-                <div className="text-2xl font-black" style={{ color: i === 0 ? "var(--f1-red)" : "white" }}>
+                <div className="text-2xl font-black" style={{ color: i === 0 ? "var(--f1-red)" : "var(--neon-green)" }}>
                   {d.total_pts.toFixed(1)} <span className="text-sm font-semibold text-gray-500">pts</span>
                 </div>
                 <div className="flex gap-3 mt-2 text-[10px] text-gray-500">
-                  <span>Avg: <span className="font-mono text-gray-400">{d.avg_pts.toFixed(1)}</span></span>
-                  <span>Best: <span className="font-mono text-emerald-400">{d.best_pts.toFixed(1)}</span></span>
-                  <span>Worst: <span className="font-mono text-red-400">{d.worst_pts.toFixed(1)}</span></span>
+                  <span>Avg: <span className="font-mono" style={{ color: "var(--neon-cyan)" }}>{d.avg_pts.toFixed(1)}</span></span>
+                  <span>Best: <span className="font-mono" style={{ color: "var(--neon-green)" }}>{d.best_pts.toFixed(1)}</span></span>
+                  <span>Worst: <span className="font-mono" style={{ color: "var(--f1-red)" }}>{d.worst_pts.toFixed(1)}</span></span>
                 </div>
               </div>
             ))}
           </div>
 
           {/* Cumulative Points Chart (simple bar chart) */}
-          <div className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="glass-card rounded-2xl p-5">
             <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-4">Season Standings</h3>
             <div className="space-y-2">
               {data.drivers.map((d, i) => {
@@ -87,16 +91,18 @@ export default function SeasonPage() {
                 const barWidth = Math.max(5, (d.total_pts / maxPts) * 100);
                 return (
                   <div key={d.driver_id} className="flex items-center gap-3">
-                    <span className="text-xs font-bold text-gray-600 w-5 text-right">{i + 1}</span>
+                    <span className={`text-xs font-bold w-6 h-6 rounded flex items-center justify-center ${i === 0 ? "pos-badge-1" : i === 1 ? "pos-badge-2" : i === 2 ? "pos-badge-3" : "text-gray-600"}`}>
+                      {i + 1}
+                    </span>
                     <div className="w-10 text-xs font-bold text-right" style={{ color: d.constructor_color }}>{d.code}</div>
                     <div className="flex-1 h-7 rounded-lg overflow-hidden relative" style={{ background: "var(--surface)" }}>
                       <div className="h-full rounded-lg transition-all duration-500 flex items-center px-2"
                         style={{ width: `${barWidth}%`, background: `${d.constructor_color}30` }}
                       >
-                        <span className="text-[11px] font-mono font-bold whitespace-nowrap">{d.total_pts.toFixed(1)}</span>
+                        <span className="text-[11px] font-mono font-bold whitespace-nowrap" style={{ color: "var(--neon-green)" }}>{d.total_pts.toFixed(1)}</span>
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono text-gray-500 w-14 text-right">
+                    <span className="text-[10px] font-mono w-14 text-right" style={{ color: "var(--neon-cyan)" }}>
                       avg {d.avg_pts.toFixed(1)}
                     </span>
                   </div>
@@ -106,7 +112,7 @@ export default function SeasonPage() {
           </div>
 
           {/* Full Table */}
-          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="glass-card rounded-2xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm" style={{ minWidth: 700 }}>
                 <thead>
@@ -121,7 +127,11 @@ export default function SeasonPage() {
                     <tr key={d.driver_id} className="hover:bg-white/[0.02]"
                       style={{ borderBottom: "1px solid var(--card-border)", background: i < 3 ? "rgba(225,6,0,0.03)" : "transparent" }}
                     >
-                      <td className="px-3 py-2 font-bold text-gray-600">{i + 1}</td>
+                      <td className="px-3 py-2">
+                        <span className={`text-xs font-bold w-6 h-6 rounded inline-flex items-center justify-center ${i === 0 ? "pos-badge-1" : i === 1 ? "pos-badge-2" : i === 2 ? "pos-badge-3" : "text-gray-600"}`}>
+                          {i + 1}
+                        </span>
+                      </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2">
                           <div className="w-1.5 h-4 rounded-full" style={{ backgroundColor: d.constructor_color }} />
@@ -129,11 +139,11 @@ export default function SeasonPage() {
                         </div>
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-gray-400">{d.races_completed}</td>
-                      <td className="px-3 py-2 text-right font-mono font-bold text-white">{d.total_pts.toFixed(1)}</td>
-                      <td className="px-3 py-2 text-right font-mono text-gray-400">{d.avg_pts.toFixed(1)}</td>
-                      <td className="px-3 py-2 text-right font-mono text-emerald-400">{d.best_pts.toFixed(1)}</td>
+                      <td className="px-3 py-2 text-right font-mono font-bold" style={{ color: "var(--neon-green)" }}>{d.total_pts.toFixed(1)}</td>
+                      <td className="px-3 py-2 text-right font-mono" style={{ color: "var(--neon-cyan)" }}>{d.avg_pts.toFixed(1)}</td>
+                      <td className="px-3 py-2 text-right font-mono" style={{ color: "var(--neon-green)" }}>{d.best_pts.toFixed(1)}</td>
                       <td className="px-3 py-2 text-right text-xs text-gray-500">{d.best_race}</td>
-                      <td className="px-3 py-2 text-right font-mono text-red-400">{d.worst_pts.toFixed(1)}</td>
+                      <td className="px-3 py-2 text-right font-mono" style={{ color: "var(--f1-red)" }}>{d.worst_pts.toFixed(1)}</td>
                       <td className="px-3 py-2 text-right text-xs text-gray-500">{d.worst_race}</td>
                     </tr>
                   ))}

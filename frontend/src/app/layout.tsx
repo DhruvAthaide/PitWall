@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PitWall - F1 Fantasy",
-  description: "F1 Fantasy simulation, optimization, and analysis tool",
+  title: "FantasyDRS - F1 Fantasy Predictions",
+  description: "AI-powered F1 Fantasy simulation, optimization, and analysis tool",
 };
 
 export default function RootLayout({

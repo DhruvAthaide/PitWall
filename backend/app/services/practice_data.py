@@ -208,7 +208,7 @@ def _fetch_weather(year: int, event_name: str, session_name: str = "FP3") -> Wea
     return WeatherInfo()
 
 
-async def fetch_practice_data(
+def fetch_practice_data(
     year: int,
     meeting_name: str,
 ) -> dict[str, list[PracticeResult]]:
@@ -239,7 +239,7 @@ async def fetch_practice_data(
     return sessions
 
 
-async def fetch_session_metadata(
+def fetch_session_metadata(
     year: int,
     meeting_name: str,
 ) -> dict:
@@ -280,6 +280,13 @@ def calculate_dynamic_params(
     if "qualifying" in practice_data:
         for r in practice_data["qualifying"]:
             quali_positions[r.driver_code] = r.position
+
+    # Pre-compute long run rankings
+    long_run_rankings: dict[str, int] = {}
+    if long_runs:
+        sorted_lr = sorted(long_runs.values(), key=lambda lr: lr.avg_lap_time)
+        for rank, lr in enumerate(sorted_lr):
+            long_run_rankings[lr.driver_code] = rank + 1
 
     results = {}
     for code in all_driver_codes:
@@ -331,9 +338,7 @@ def calculate_dynamic_params(
         overtake_ease = 1.0 - overtake_difficulty
 
         if long_runs and code in long_runs:
-            lr = long_runs[code]
-            all_lr_times = sorted(lr2.avg_lap_time for lr2 in long_runs.values())
-            lr_position = all_lr_times.index(lr.avg_lap_time) + 1
+            lr_position = long_run_rankings[code]
             rpace_mean = (lr_position * 0.6 + qpace_mean * 0.4) - (avg_pos_gained * overtake_ease)
             rpace_std = qpace_std * 1.0
         else:
@@ -366,3 +371,102 @@ def calculate_dynamic_params(
         )
 
     return results
+
+
+def fetch_race_results(year: int, event_name: str, db=None) -> list[dict] | None:
+    """Fetch race results from FastF1 and map to driver_ids.
+
+    Returns list of dicts matching DriverResultInput schema, or None if unavailable.
+    Handles edge cases: DNS, lapped drivers, DSQ, reserve drivers.
+    """
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+
+            full_event = event_name
+            if "Grand Prix" not in full_event:
+                full_event = f"{event_name} Grand Prix"
+
+            session = fastf1.get_session(year, full_event, "R")
+            session.load(telemetry=False, weather=False, messages=False, laps=False)
+
+        results_df = session.results
+        if results_df is None or results_df.empty:
+            logger.info(f"No race results available for {full_event} {year}")
+            return None
+
+        # Build driver code -> driver_id mapping from DB
+        driver_map = {}
+        if db:
+            from app.models import Driver
+            for driver in db.query(Driver).all():
+                driver_map[driver.code] = driver.id
+
+        parsed = []
+        for _, row in results_df.iterrows():
+            code = str(row.get("Abbreviation", ""))
+            if not code or code not in driver_map:
+                if code:
+                    logger.warning(f"Driver code '{code}' not found in DB, skipping")
+                continue
+
+            driver_id = driver_map[code]
+
+            # Grid position
+            grid = int(row.get("GridPosition", 22))
+            if grid == 0:
+                grid = 22  # Pit lane start
+
+            # Race position
+            position = row.get("Position", None)
+            try:
+                race_pos = int(float(position)) if position is not None else 22
+            except (ValueError, TypeError):
+                race_pos = 22
+
+            # DNF detection
+            status = str(row.get("Status", ""))
+            is_dnf = False
+            if status.upper() in ("DNS", "DNF", "DSQ"):
+                is_dnf = True
+            elif status and status != "Finished" and not status.startswith("+"):
+                is_dnf = True
+
+            if status.upper() == "DNS":
+                race_pos = 22
+
+            # Fastest lap
+            fl_rank = row.get("FastestLapRank", None)
+            has_fastest_lap = False
+            try:
+                has_fastest_lap = int(float(fl_rank)) == 1
+            except (ValueError, TypeError):
+                pass
+
+            # Estimate overtakes from position change
+            overtakes = max(0, grid - race_pos) if not is_dnf else 0
+
+            parsed.append({
+                "driver_id": driver_id,
+                "qualifying_position": grid,
+                "race_position": race_pos,
+                "dnf": is_dnf,
+                "fastest_lap": has_fastest_lap,
+                "dotd": False,
+                "overtakes": overtakes,
+            })
+
+        if not parsed:
+            logger.info(f"No valid driver results parsed for {full_event} {year}")
+            return None
+
+        logger.info(f"Fetched {len(parsed)} driver results for {full_event} {year}")
+        return parsed
+
+    except Exception as e:
+        msg = str(e)
+        if "not been loaded yet" in msg or "Failed to load" in msg or "No data" in msg.lower():
+            logger.info(f"Race results not yet available for {event_name} {year}")
+        else:
+            logger.warning(f"Failed to fetch race results for {event_name} {year}: {e}")
+        return None

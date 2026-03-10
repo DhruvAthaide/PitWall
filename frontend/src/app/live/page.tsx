@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import { getMyTeam } from "@/lib/storage";
@@ -15,6 +15,7 @@ export default function LiveScoring() {
   const [myDriverIds, setMyDriverIds] = useState<number[]>([]);
   const [myConstructorIds, setMyConstructorIds] = useState<number[]>([]);
   const [isLive, setIsLive] = useState(false);
+  const selectedRaceIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     // Load saved team from localStorage
@@ -34,11 +35,15 @@ export default function LiveScoring() {
       setDrivers(d);
       setConstructors(c);
       setRaces(r);
-      if (nextRace && !selectedRaceId) {
+      if (nextRace && !selectedRaceIdRef.current) {
         setSelectedRaceId(nextRace.id);
       }
-    });
+    }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    selectedRaceIdRef.current = selectedRaceId;
+  }, [selectedRaceId]);
 
   const toggleMyDriver = (id: number) => {
     setMyDriverIds((prev) =>
@@ -64,16 +69,16 @@ export default function LiveScoring() {
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight">Live Scoring</h1>
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{
-              background: isLive ? "rgba(34,197,94,0.1)" : "var(--card-bg)",
-              border: `1px solid ${isLive ? "rgba(34,197,94,0.3)" : "var(--card-border)"}`,
+              background: isLive ? "rgba(225,6,0,0.1)" : "var(--card-bg)",
+              border: `1px solid ${isLive ? "rgba(225,6,0,0.3)" : "var(--card-border)"}`,
             }}>
-              <div className={`w-2 h-2 rounded-full ${isLive ? "bg-green-500 animate-pulse" : "bg-gray-600"}`} />
-              <span className={`text-xs font-semibold ${isLive ? "text-green-400" : "text-gray-500"}`}>
+              <div className={`w-2 h-2 rounded-full ${isLive ? "pulse-red" : ""}`} style={{ backgroundColor: isLive ? "var(--f1-red)" : "rgba(255,255,255,0.2)" }} />
+              <span className="text-xs font-semibold" style={{ color: isLive ? "var(--f1-red)" : "rgba(255,255,255,0.35)" }}>
                 {isLive ? "LIVE" : "OFFLINE"}
               </span>
             </div>
           </div>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1">Track your fantasy team points in real-time during race weekends</p>
+          <p className="text-xs sm:text-sm mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>Track your fantasy team points in real-time during race weekends</p>
         </div>
         <RaceSelector races={races} selectedRaceId={selectedRaceId} onSelect={setSelectedRaceId} />
       </motion.div>
@@ -82,12 +87,12 @@ export default function LiveScoring() {
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Drivers Selection */}
-          <div className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="glass-card p-5">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500">Select Drivers</h3>
+              <h3 className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--neon-cyan)" }}>Select Drivers</h3>
               <span className="text-xs font-mono px-2.5 py-1 rounded-lg" style={{
                 background: myDriverIds.length === 5 ? "rgba(225,6,0,0.15)" : "var(--surface)",
-                color: myDriverIds.length === 5 ? "var(--f1-red)" : "#6b7280",
+                color: myDriverIds.length === 5 ? "var(--f1-red)" : "rgba(255,255,255,0.4)",
                 border: `1px solid ${myDriverIds.length === 5 ? "rgba(225,6,0,0.3)" : "var(--card-border)"}`,
               }}>
                 {myDriverIds.length}/5
@@ -118,20 +123,20 @@ export default function LiveScoring() {
                       }} />
                       <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold" style={{
                         backgroundColor: isSelected ? `${d.constructor_color}20` : "var(--surface)",
-                        color: isSelected ? d.constructor_color : "#4b5563",
+                        color: isSelected ? d.constructor_color : "rgba(255,255,255,0.3)",
                         border: `1px solid ${isSelected ? d.constructor_color + "30" : "var(--card-border)"}`,
                       }}>
                         {d.number}
                       </div>
                       <div className="text-left">
-                        <span className={`font-semibold text-xs ${isSelected ? "text-white" : "text-gray-400"}`}>
+                        <span className={`font-semibold text-xs ${isSelected ? "text-white" : ""}`} style={!isSelected ? { color: "rgba(255,255,255,0.4)" } : undefined}>
                           {d.code}
                         </span>
-                        <span className="text-[10px] text-gray-600 ml-2">{d.first_name} {d.last_name}</span>
+                        <span className="text-[10px] ml-2" style={{ color: "rgba(255,255,255,0.25)" }}>{d.first_name} {d.last_name}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-xs font-mono text-gray-500">${d.price}M</span>
+                      <span className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.35)" }}>${d.price}M</span>
                       {isSelected && (
                         <motion.div
                           initial={{ scale: 0 }}
@@ -152,12 +157,12 @@ export default function LiveScoring() {
           </div>
 
           {/* Constructors Selection */}
-          <div className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="glass-card p-5">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500">Select Constructors</h3>
+              <h3 className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--neon-cyan)" }}>Select Constructors</h3>
               <span className="text-xs font-mono px-2.5 py-1 rounded-lg" style={{
                 background: myConstructorIds.length === 2 ? "rgba(225,6,0,0.15)" : "var(--surface)",
-                color: myConstructorIds.length === 2 ? "var(--f1-red)" : "#6b7280",
+                color: myConstructorIds.length === 2 ? "var(--f1-red)" : "rgba(255,255,255,0.4)",
                 border: `1px solid ${myConstructorIds.length === 2 ? "rgba(225,6,0,0.3)" : "var(--card-border)"}`,
               }}>
                 {myConstructorIds.length}/2
@@ -190,14 +195,14 @@ export default function LiveScoring() {
                         backgroundColor: isSelected ? `${c.color}20` : "var(--surface)",
                         border: `1px solid ${isSelected ? c.color + "30" : "var(--card-border)"}`,
                       }}>
-                        <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: isSelected ? c.color : "#4b5563" }} />
+                        <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: isSelected ? c.color : "rgba(255,255,255,0.3)" }} />
                       </div>
-                      <span className={`font-semibold text-xs ${isSelected ? "text-white" : "text-gray-400"}`}>
+                      <span className={`font-semibold text-xs ${isSelected ? "text-white" : ""}`} style={!isSelected ? { color: "rgba(255,255,255,0.4)" } : undefined}>
                         {c.name}
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-xs font-mono text-gray-500">${c.price}M</span>
+                      <span className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.35)" }}>${c.price}M</span>
                       {isSelected && (
                         <motion.div
                           initial={{ scale: 0 }}
@@ -225,8 +230,8 @@ export default function LiveScoring() {
                 style={{ borderTop: "1px solid var(--card-border)" }}
               >
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold">Team Budget</span>
-                  <span className={`text-sm font-mono font-bold ${teamBudget > 100 ? "text-red-400" : "text-emerald-400"}`}>
+                  <span className="text-xs uppercase tracking-wider font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Team Budget</span>
+                  <span className="text-sm font-mono font-bold" style={{ color: teamBudget > 100 ? "var(--f1-red)" : "var(--neon-green)" }}>
                     ${teamBudget.toFixed(1)}M / $100M
                   </span>
                 </div>
@@ -236,7 +241,7 @@ export default function LiveScoring() {
                     initial={{ width: 0 }}
                     animate={{ width: `${Math.min((teamBudget / 100) * 100, 100)}%` }}
                     transition={{ type: "spring", stiffness: 80 }}
-                    style={{ background: teamBudget > 100 ? "#ef4444" : "var(--f1-red)" }}
+                    style={{ background: teamBudget > 100 ? "var(--f1-red)" : "var(--neon-green)" }}
                   />
                 </div>
               </motion.div>
@@ -256,13 +261,15 @@ export default function LiveScoring() {
             className="space-y-5"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold uppercase tracking-widest text-gray-500">Your Team — Live Points</h2>
+              <h2 className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--neon-cyan)" }}>Your Team -- Live Points</h2>
               {!isLive && (
-                <span className="text-[10px] text-gray-600 px-3 py-1 rounded-full" style={{ background: "var(--surface)", border: "1px solid var(--card-border)" }}>
+                <span className="text-[10px] px-3 py-1 rounded-full" style={{ color: "rgba(255,255,255,0.3)", background: "var(--surface)", border: "1px solid var(--card-border)" }}>
                   Points will update during live sessions
                 </span>
               )}
             </div>
+
+            <div className="racing-stripe" />
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {myDrivers.map((d, i) => (
@@ -271,8 +278,7 @@ export default function LiveScoring() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: i * 0.05 }}
-                  className="relative rounded-xl overflow-hidden"
-                  style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
+                  className="glass-card relative overflow-hidden"
                 >
                   <div className="absolute top-0 left-0 w-full h-[2px]" style={{ backgroundColor: d.constructor_color }} />
                   <div className="p-4 flex items-center justify-between">
@@ -286,20 +292,20 @@ export default function LiveScoring() {
                       </div>
                       <div>
                         <div className="font-bold text-sm">{d.code}</div>
-                        <div className="text-[11px] text-gray-500">{d.constructor_name}</div>
+                        <div className="text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>{d.constructor_name}</div>
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-2xl font-mono font-bold text-gray-600">--</div>
-                      <div className="text-[10px] uppercase tracking-wider text-gray-600 font-semibold">pts</div>
+                      <div className="text-2xl font-mono font-bold" style={{ color: "rgba(255,255,255,0.25)" }}>--</div>
+                      <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "rgba(255,255,255,0.25)" }}>pts</div>
                     </div>
                   </div>
                   {/* Scoring breakdown placeholder */}
                   <div className="px-4 pb-3 flex gap-2">
                     {["Q", "R", "OT", "FL"].map((cat) => (
                       <div key={cat} className="flex-1 rounded-lg py-1 text-center" style={{ background: "var(--surface)" }}>
-                        <div className="text-[9px] text-gray-600 uppercase font-semibold">{cat}</div>
-                        <div className="text-xs font-mono text-gray-500">--</div>
+                        <div className="text-[9px] uppercase font-semibold" style={{ color: "rgba(255,255,255,0.25)" }}>{cat}</div>
+                        <div className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.35)" }}>--</div>
                       </div>
                     ))}
                   </div>
@@ -312,8 +318,7 @@ export default function LiveScoring() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: (myDrivers.length + i) * 0.05 }}
-                  className="relative rounded-xl overflow-hidden"
-                  style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
+                  className="glass-card relative overflow-hidden"
                 >
                   <div className="absolute top-0 left-0 w-full h-[2px]" style={{ backgroundColor: c.color }} />
                   <div className="p-4 flex items-center justify-between">
@@ -326,19 +331,19 @@ export default function LiveScoring() {
                       </div>
                       <div>
                         <div className="font-bold text-sm">{c.name}</div>
-                        <div className="text-[11px] text-gray-500">Constructor</div>
+                        <div className="text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>Constructor</div>
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-2xl font-mono font-bold text-gray-600">--</div>
-                      <div className="text-[10px] uppercase tracking-wider text-gray-600 font-semibold">pts</div>
+                      <div className="text-2xl font-mono font-bold" style={{ color: "rgba(255,255,255,0.25)" }}>--</div>
+                      <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "rgba(255,255,255,0.25)" }}>pts</div>
                     </div>
                   </div>
                   <div className="px-4 pb-3 flex gap-2">
                     {["PIT", "POS", "Q"].map((cat) => (
                       <div key={cat} className="flex-1 rounded-lg py-1 text-center" style={{ background: "var(--surface)" }}>
-                        <div className="text-[9px] text-gray-600 uppercase font-semibold">{cat}</div>
-                        <div className="text-xs font-mono text-gray-500">--</div>
+                        <div className="text-[9px] uppercase font-semibold" style={{ color: "rgba(255,255,255,0.25)" }}>{cat}</div>
+                        <div className="text-xs font-mono" style={{ color: "rgba(255,255,255,0.35)" }}>--</div>
                       </div>
                     ))}
                   </div>
@@ -351,16 +356,15 @@ export default function LiveScoring() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3 }}
-              className="rounded-2xl p-5 flex items-center justify-between"
-              style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
+              className="glass-card p-5 flex items-center justify-between glow-red"
             >
               <div>
-                <div className="text-xs font-bold uppercase tracking-widest text-gray-500">Total Team Points</div>
-                <p className="text-[11px] text-gray-600 mt-1">Data sourced from OpenF1 API during live sessions</p>
+                <div className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--neon-cyan)" }}>Total Team Points</div>
+                <p className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,0.3)" }}>Data sourced from OpenF1 API during live sessions</p>
               </div>
               <div className="text-right">
-                <div className="text-4xl font-mono font-black text-gray-600">--</div>
-                <div className="text-[10px] uppercase tracking-wider text-gray-600 font-semibold mt-1">points</div>
+                <div className="text-4xl font-mono font-black" style={{ color: "rgba(255,255,255,0.25)" }}>--</div>
+                <div className="text-[10px] uppercase tracking-wider font-semibold mt-1" style={{ color: "rgba(255,255,255,0.25)" }}>points</div>
               </div>
             </motion.div>
           </motion.div>
@@ -371,12 +375,12 @@ export default function LiveScoring() {
       {myDriverIds.length === 0 && myConstructorIds.length === 0 && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="text-center py-12">
           <div className="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center" style={{ background: "var(--card-border)" }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polyline points="12 6 12 12 16 14" />
             </svg>
           </div>
-          <p className="text-sm text-gray-600">Select your fantasy team above to start tracking live points</p>
+          <p className="text-sm" style={{ color: "rgba(255,255,255,0.3)" }}>Select your fantasy team above to start tracking live points</p>
         </motion.div>
       )}
     </div>

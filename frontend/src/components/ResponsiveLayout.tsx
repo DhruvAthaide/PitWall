@@ -34,12 +34,15 @@ export default function ResponsiveLayout({ children }: { children: React.ReactNo
             </svg>
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md flex items-center justify-center font-black text-white text-[8px] tracking-tighter"
+            <div className="w-6 h-6 rounded-md flex items-center justify-center font-black text-white text-[7px] tracking-tighter"
               style={{ background: "linear-gradient(135deg, #e10600, #b30500)" }}
             >
-              PW
+              DRS
             </div>
-            <span className="text-sm font-bold text-white">PitWall</span>
+            <span className="text-sm font-bold">
+              <span className="text-white">Fantasy</span>
+              <span style={{ color: "#e10600" }}>DRS</span>
+            </span>
           </div>
         </div>
         <div className="p-4 md:p-6 lg:p-8 max-w-[1400px] mx-auto">{children}</div>

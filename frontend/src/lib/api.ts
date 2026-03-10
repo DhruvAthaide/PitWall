@@ -18,6 +18,7 @@ import type {
   Driver,
   Constructor,
   Race,
+  SimulationResult,
   SimulationResponse,
   TeamResult,
   BestTeamRequest,
@@ -35,6 +36,9 @@ import type {
   DriverScorecard,
   RaceResultEntry,
   SeasonSummary,
+  StrategyBrief,
+  CompareDriverResult,
+  CompareConstructorResult,
 } from "@/types";
 
 export const api = {
@@ -48,10 +52,28 @@ export const api = {
 
   getNextRace: () => fetchApi<Race | null>("/api/races/next"),
 
-  runSimulation: (raceId: number, nSimulations: number = 10000) =>
+  runSimulation: (raceId: number, nSimulations: number = 50000) =>
     fetchApi<SimulationResponse>(`/api/simulate/${raceId}?n_simulations=${nSimulations}`, {
       method: "POST",
     }),
+
+  getCachedSimulation: (raceId: number) =>
+    fetchApi<{ status: string; race_id: number; race_name: string; results: SimulationResult[]; simulated_at: string | null }>(`/api/simulation/${raceId}/cached`),
+
+  triggerRefresh: () =>
+    fetchApi<{ ingestion: unknown[]; simulation: unknown }>("/api/refresh", { method: "POST" }),
+
+  autoIngestResults: (raceId: number) =>
+    fetchApi<{ status: string; results?: RaceResultEntry[]; message?: string }>(`/api/results/${raceId}/auto`),
+
+  getStrategyBrief: (raceId: number) =>
+    fetchApi<StrategyBrief>(`/api/simulation/${raceId}/strategy-brief`, { method: "POST" }),
+
+  compareDrivers: (ids: number[], raceId: number) =>
+    fetchApi<CompareDriverResult[]>(`/api/compare/drivers?ids=${ids.join(",")}&race_id=${raceId}`),
+
+  compareConstructors: (ids: number[], raceId: number) =>
+    fetchApi<CompareConstructorResult[]>(`/api/compare/constructors?ids=${ids.join(",")}&race_id=${raceId}`),
 
   getBestTeams: (request: BestTeamRequest) =>
     fetchApi<TeamResult[]>("/api/best-teams", {

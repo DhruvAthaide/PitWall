@@ -26,7 +26,7 @@ export default function DrsAnalysisPage() {
 
   useEffect(() => {
     setMyTeam(getMyTeam());
-    api.getRaces().then(setRaces);
+    api.getRaces().then(setRaces).catch(() => {});
   }, []);
 
   const handleAnalyze = async () => {
@@ -38,6 +38,7 @@ export default function DrsAnalysisPage() {
       setResults(data);
       setSearched(true);
     } catch {
+      setResults([]);
       setSearched(true);
     }
     setLoading(false);
@@ -113,7 +114,7 @@ export default function DrsAnalysisPage() {
                   <span className="text-gray-500">2x Expected:</span> <span className="font-mono font-bold text-white">{results[0].expected_2x.toFixed(1)}</span>
                 </div>
                 <div className="text-xs text-gray-400">
-                  <span className="text-gray-500">P90 Upside:</span> <span className="font-mono font-bold text-emerald-400">{results[0].p90_2x.toFixed(1)}</span>
+                  <span className="text-gray-500">P90 Upside:</span> <span className="font-mono font-bold" style={{ color: "var(--neon-green)" }}>{results[0].p90_2x.toFixed(1)}</span>
                 </div>
                 <div className="text-xs text-gray-400">
                   <span className="text-gray-500">Risk:</span> <span className="font-mono font-bold">{(results[0].risk_score * 100).toFixed(0)}%</span>
@@ -123,7 +124,7 @@ export default function DrsAnalysisPage() {
           )}
 
           {/* Bar Chart */}
-          <div className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="glass-card rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
             <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-4">Extra Points from DRS (2x)</h3>
             <div className="space-y-2">
               {results.map((r) => {
@@ -151,7 +152,7 @@ export default function DrsAnalysisPage() {
           </div>
 
           {/* Detailed Table */}
-          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="glass-card rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
             <div className="overflow-x-auto">
               <table className="w-full text-sm" style={{ minWidth: 650 }}>
                 <thead>
@@ -177,9 +178,9 @@ export default function DrsAnalysisPage() {
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-gray-400">{r.expected_1x.toFixed(1)}</td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-white">{r.expected_2x.toFixed(1)}</td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-emerald-400">+{r.extra_from_drs.toFixed(1)}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold" style={{ color: "var(--neon-green)" }}>+{r.extra_from_drs.toFixed(1)}</td>
                         <td className="px-4 py-3 text-right font-mono text-red-400">{r.p10_2x.toFixed(1)}</td>
-                        <td className="px-4 py-3 text-right font-mono text-emerald-400">{r.p90_2x.toFixed(1)}</td>
+                        <td className="px-4 py-3 text-right font-mono" style={{ color: "var(--neon-green)" }}>{r.p90_2x.toFixed(1)}</td>
                         <td className="px-4 py-3 text-right font-mono text-gray-400">{(r.risk_score * 100).toFixed(0)}%</td>
                         <td className="px-4 py-3 text-right">
                           <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: tier.bg, color: tier.color }}>{tier.label}</span>

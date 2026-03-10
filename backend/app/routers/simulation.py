@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import math
 from fastapi import APIRouter, Depends
@@ -114,14 +115,14 @@ def _compute_history_adjustments(
         s = driver_stats[r.driver_id]
         s["total_races"] += 1
         s["total_weight"] += weight
-        s["weighted_quali"] += r.qualifying_position * weight
+        s["weighted_quali"] += (r.qualifying_position or 22) * weight
 
         if r.dnf:
             s["dnf_weighted"] += weight
         else:
-            s["weighted_race"] += r.race_position * weight
+            s["weighted_race"] += (r.race_position or 22) * weight
             s["race_finish_weight"] += weight
-            s["weighted_pos_gained"] += (r.qualifying_position - r.race_position) * weight
+            s["weighted_pos_gained"] += ((r.qualifying_position or 22) - (r.race_position or 22)) * weight
 
         if r.fastest_lap:
             s["fl_weighted"] += weight
@@ -257,156 +258,97 @@ def _build_constructor_params(db: Session, driver_params: list[DriverParams]) ->
 async def run_simulation(
     race_id: int,
     use_practice_data: bool = True,
-    n_simulations: int = 10000,
+    n_simulations: int = 50000,
     grid_penalties: dict[int, int] | None = None,
     db: Session = Depends(get_db),
 ):
-    race = db.get(Race, race_id)
-    if not race:
+    """Run simulation (force mode). Thin wrapper around auto_sim."""
+    from app.services.auto_sim import run_auto_simulation, _build_response
+
+    result = await run_auto_simulation(
+        db, race_id, force=True,
+        n_simulations=n_simulations,
+        grid_penalties=grid_penalties,
+        use_practice_data=use_practice_data,
+    )
+
+    if result.get("status") == "error":
         return {"results": [], "meta": {}}
 
-    circuit = db.get(Circuit, race.circuit_id)
-    overtake_diff = circuit.overtake_difficulty if circuit else 0.5
-
-    # Build circuit traits for engine
-    circuit_traits = CircuitTraits(
-        overtake_difficulty=circuit.overtake_difficulty if circuit else 0.5,
-        high_speed=circuit.high_speed if circuit else 0.5,
-        street_circuit=circuit.street_circuit if circuit else False,
-        altitude=circuit.altitude if circuit else 0,
-        avg_degradation=circuit.avg_degradation if circuit else 0.5,
-    )
-
-    # Clamp simulation count
-    n_simulations = max(1000, min(50000, n_simulations))
-
-    # Fetch session data via FastF1
-    dynamic_params = None
-    data_sources_summary = []
-    weather_info = None
-    long_runs = None
-
-    if use_practice_data:
-        try:
-            year = int(race.date[:4]) if race.date else 2026
-            meeting_name = race.name.replace(" Grand Prix", "")
-
-            practice_data = await fetch_practice_data(year, meeting_name)
-
-            # Also fetch long runs and weather
-            try:
-                metadata = await fetch_session_metadata(year, meeting_name)
-                long_runs = metadata.get("long_runs")
-                w = metadata.get("weather")
-                if w and w.air_temp is not None:
-                    weather_info = {
-                        "air_temp": w.air_temp,
-                        "track_temp": w.track_temp,
-                        "humidity": w.humidity,
-                        "wind_speed": w.wind_speed,
-                        "rainfall": w.rainfall,
-                    }
-            except Exception as e:
-                logger.warning(f"Failed to fetch session metadata: {e}")
-
-            if practice_data:
-                dynamic_params = calculate_dynamic_params(
-                    practice_data,
-                    DRIVER_DEFAULTS,
-                    overtake_diff,
-                    long_runs=long_runs,
-                )
-                # Collect unique data sources
-                all_sources = set()
-                for dp in dynamic_params.values():
-                    all_sources.update(dp.data_sources)
-                data_sources_summary = sorted(all_sources)
-        except Exception as e:
-            logger.warning(f"Failed to fetch practice data: {e}. Falling back to defaults.")
-
-    # Compute adjustments from previous race results (empty for Round 1)
-    # [A4] Pass target circuit for similarity weighting
-    history_adjustments = _compute_history_adjustments(db, race, target_circuit=circuit)
-    if history_adjustments:
-        logger.info(f"Using previous results from {len(history_adjustments)} drivers to adjust simulation params")
-        if "previous_results" not in data_sources_summary:
-            data_sources_summary.append("previous_results")
-
-    driver_params = _build_driver_params(db, dynamic_params, grid_penalties, history_adjustments)
-    constructor_params = _build_constructor_params(db, driver_params)
-
-    # [A5] Build weather config for engine
-    weather_config = WeatherConfig()
-    if weather_info and weather_info.get("rainfall"):
-        weather_config = WeatherConfig(is_wet=True)
-
-    results = simulate_race_weekend(
-        drivers=driver_params,
-        constructors=constructor_params,
-        circuit=circuit_traits,
-        is_sprint=race.has_sprint,
-        n_simulations=n_simulations,
-        weather=weather_config,
-    )
-
-    # Store results and build response
-    response = []
-    for r in results:
-        sim_result = SimulationResult(
-            race_id=race_id,
-            asset_type=r.asset_type,
-            asset_id=r.asset_id,
-            expected_pts_mean=round(r.mean, 2),
-            expected_pts_median=round(r.median, 2),
-            expected_pts_std=round(r.std, 2),
-            expected_pts_p10=round(r.p10, 2),
-            expected_pts_p90=round(r.p90, 2),
-            simulated_at=datetime.utcnow(),
-        )
-        db.add(sim_result)
-
-        if r.asset_type == "driver":
-            driver = db.get(Driver, r.asset_id)
-            name = f"{driver.first_name} {driver.last_name}" if driver else "Unknown"
-        else:
-            constructor = db.get(Constructor, r.asset_id)
-            name = constructor.name if constructor else "Unknown"
-
-        price_row = (
-            db.query(FantasyPrice)
-            .filter_by(asset_type=r.asset_type, asset_id=r.asset_id)
-            .order_by(FantasyPrice.id.desc())
-            .first()
-        )
-        price = price_row.price if price_row else 0
-
-        response.append(SimulationResultResponse(
-            asset_type=r.asset_type,
-            asset_id=r.asset_id,
-            asset_name=name,
-            price=price,
-            expected_pts_mean=round(r.mean, 2),
-            expected_pts_median=round(r.median, 2),
-            expected_pts_std=round(r.std, 2),
-            expected_pts_p10=round(r.p10, 2),
-            expected_pts_p90=round(r.p90, 2),
-            points_per_million=round(r.mean / price, 3) if price > 0 else 0,
-        ))
-
-    db.commit()
+    # Build response in the same format as before
+    sim_results = _build_response(db, race_id)
+    response = [SimulationResultResponse(**r) for r in sim_results]
 
     meta = SimulationMeta(
         race_id=race_id,
-        race_name=race.name,
-        n_simulations=n_simulations,
-        data_sources=data_sources_summary,
-        has_qualifying="qualifying" in data_sources_summary,
-        has_long_runs=bool(long_runs),
-        weather=weather_info,
-        simulated_at=datetime.utcnow().isoformat(),
+        race_name=result.get("race_name", ""),
+        n_simulations=result.get("n_simulations", n_simulations),
+        data_sources=result.get("data_sources", []),
+        has_qualifying=result.get("has_qualifying", False),
+        has_long_runs=result.get("has_long_runs", False),
+        weather=result.get("weather"),
+        simulated_at=result.get("simulated_at", ""),
     )
 
     return {"results": response, "meta": meta}
+
+
+@router.get("/simulation/{race_id}/cached")
+def get_cached_simulation(race_id: int, db: Session = Depends(get_db)):
+    """Return cached simulation results instantly (no computation)."""
+    from app.services.auto_sim import _build_response
+
+    race = db.get(Race, race_id)
+    if not race:
+        return {"status": "not_found", "race_id": race_id, "results": []}
+
+    sim_results = _build_response(db, race_id)
+    if not sim_results:
+        return {"status": "no_data", "race_id": race_id, "race_name": race.name, "results": []}
+
+    latest = (
+        db.query(SimulationResult)
+        .filter_by(race_id=race_id)
+        .order_by(SimulationResult.simulated_at.desc())
+        .first()
+    )
+
+    return {
+        "status": "ok",
+        "race_id": race_id,
+        "race_name": race.name,
+        "results": sim_results,
+        "simulated_at": latest.simulated_at.isoformat() if latest and latest.simulated_at else None,
+    }
+
+
+@router.post("/refresh")
+async def refresh(db: Session = Depends(get_db)):
+    """Auto-ingest results + re-simulate if stale. Called by external cron."""
+    from app.services.auto_sim import auto_ingest_results, run_auto_simulation, get_next_race_from_db
+
+    ingestion_log = await auto_ingest_results(db)
+
+    next_race = get_next_race_from_db(db)
+    sim_result = None
+    if next_race:
+        sim_result = await run_auto_simulation(db, next_race.id)
+
+    return {
+        "ingestion": ingestion_log,
+        "simulation": sim_result,
+    }
+
+
+@router.post("/simulation/{race_id}/strategy-brief")
+def get_strategy_brief(race_id: int, db: Session = Depends(get_db)):
+    """Generate a rule-based strategy brief from simulation data."""
+    from app.services.auto_sim import generate_strategy_brief
+
+    brief = generate_strategy_brief(db, race_id)
+    if not brief:
+        return {"status": "no_data", "message": "No simulation data available for this race."}
+    return brief
 
 
 @router.post("/best-teams", response_model=list[TeamResult])
@@ -485,6 +427,8 @@ def get_best_teams(request: BestTeamRequest, db: Session = Depends(get_db)):
         driver_responses = []
         for da in team.drivers:
             d = db.get(Driver, da.id)
+            if d is None:
+                continue
             driver_responses.append(DriverResponse(
                 id=d.id,
                 code=d.code,
@@ -502,6 +446,8 @@ def get_best_teams(request: BestTeamRequest, db: Session = Depends(get_db)):
         constructor_responses = []
         for ca in team.constructors:
             c = db.get(Constructor, ca.id)
+            if c is None:
+                continue
             driver_codes = [d.code for d in db.query(Driver).filter_by(constructor_id=c.id).all()]
             constructor_responses.append(ConstructorResponse(
                 id=c.id,
@@ -514,6 +460,8 @@ def get_best_teams(request: BestTeamRequest, db: Session = Depends(get_db)):
             ))
 
         drs_d = db.get(Driver, team.drs_driver.id)
+        if drs_d is None:
+            continue
         drs_response = DriverResponse(
             id=drs_d.id,
             code=drs_d.code,
@@ -628,7 +576,8 @@ async def batch_simulate(
         driver_params = _build_driver_params(db, None, None, history_adjustments)
         constructor_params = _build_constructor_params(db, driver_params)
 
-        results = simulate_race_weekend(
+        results = await asyncio.to_thread(
+            simulate_race_weekend,
             drivers=driver_params,
             constructors=constructor_params,
             circuit=circuit_traits,

@@ -150,7 +150,7 @@ def simulate_race_weekend(
 
         # === RACE ===
         race_raw = np.zeros(n_drivers, dtype=float)
-        race_positions = np.empty(n_drivers, dtype=int)
+        race_positions = np.full(n_drivers, n_drivers + 1, dtype=int)
         is_dnf = np.zeros(n_drivers, dtype=bool)
 
         for i, d in enumerate(drivers):

@@ -5,12 +5,12 @@ import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import type { ChipStrategyResponse } from "@/types";
 
-const CHIP_INFO: Record<string, { label: string; color: string; description: string }> = {
-  wildcard: { label: "Wildcard", color: "#a855f7", description: "Unlimited free transfers for one race" },
-  limitless: { label: "Limitless", color: "#22c55e", description: "No budget cap for one race" },
-  extra_drs: { label: "Extra DRS", color: "#3b82f6", description: "3 DRS boost drivers instead of 1" },
-  final_fix: { label: "Final Fix", color: "#f59e0b", description: "Change 1 driver after qualifying" },
-  autopilot: { label: "Autopilot", color: "#06b6d4", description: "Auto-selects the optimal team" },
+const CHIP_INFO: Record<string, { label: string; color: string; glow: string; description: string }> = {
+  wildcard: { label: "Wildcard", color: "#9945ff", glow: "glow-purple", description: "Unlimited free transfers for one race" },
+  limitless: { label: "Limitless", color: "#00ff87", glow: "glow-green", description: "No budget cap for one race" },
+  extra_drs: { label: "Extra DRS", color: "#00d4ff", glow: "glow-cyan", description: "3 DRS boost drivers instead of 1" },
+  final_fix: { label: "Final Fix", color: "#ffd000", glow: "glow-red", description: "Change 1 driver after qualifying" },
+  autopilot: { label: "Autopilot", color: "#00d4ff", glow: "glow-cyan", description: "Auto-selects the optimal team" },
 };
 
 export default function ChipPlannerPage() {
@@ -49,7 +49,7 @@ export default function ChipPlannerPage() {
 
   const currentChip = chipData.find((c) => c.chip_type === selectedChip);
   const chipInfo = CHIP_INFO[selectedChip];
-  const hasSimData = currentChip?.race_values.some((rv) => rv.normal_points > 0);
+  const hasSimData = currentChip?.race_values.some((rv) => rv.normal_points > 0) ?? false;
 
   return (
     <div className="space-y-8">
@@ -65,10 +65,10 @@ export default function ChipPlannerPage() {
             <button
               key={key}
               onClick={() => setSelectedChip(key)}
-              className="px-4 py-2.5 rounded-xl text-xs font-bold transition-all"
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${selectedChip === key ? info.glow : "glass-card"}`}
               style={selectedChip === key
-                ? { background: info.color, color: "white", boxShadow: `0 0 20px ${info.color}30` }
-                : { background: "var(--card-bg)", border: "1px solid var(--card-border)", color: "#6b7280" }
+                ? { background: info.color, color: "#050508", boxShadow: `0 0 20px ${info.color}40, 0 0 40px ${info.color}15` }
+                : { color: "#6b7280" }
               }
             >
               {info.label}
@@ -77,13 +77,16 @@ export default function ChipPlannerPage() {
         </div>
       </motion.div>
 
+      {/* Racing stripe divider */}
+      <div className="racing-stripe" />
+
       {/* Chip Description */}
       {chipInfo && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
-          className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
+          className="glass-card rounded-2xl p-5"
         >
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chipInfo.color }} />
+            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chipInfo.color, boxShadow: `0 0 8px ${chipInfo.color}60` }} />
             <h2 className="text-sm font-bold">{chipInfo.label}</h2>
           </div>
           <p className="text-xs text-gray-500">{chipInfo.description}</p>
@@ -91,7 +94,7 @@ export default function ChipPlannerPage() {
             <div className="mt-3 flex items-center gap-2">
               <span className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold">Best Race:</span>
               <span className="text-sm font-bold" style={{ color: chipInfo.color }}>{currentChip.best_race_name}</span>
-              <span className="text-xs font-mono text-emerald-400">+{currentChip.best_gain.toFixed(1)} pts</span>
+              <span className="text-xs font-mono" style={{ color: "var(--neon-green)" }}>+{currentChip.best_gain.toFixed(1)} pts</span>
             </div>
           )}
         </motion.div>
@@ -118,13 +121,13 @@ export default function ChipPlannerPage() {
           <button
             onClick={handleBatchSimulate}
             disabled={batchSimulating}
-            className="px-5 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+            className="px-5 py-2.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 glow-red"
             style={{ background: "var(--f1-red)", color: "white" }}
           >
             {batchSimulating ? "Simulating All Races..." : "Simulate All Races"}
           </button>
           {batchResult && (
-            <p className="text-xs text-emerald-400 mt-3">
+            <p className="text-xs mt-3" style={{ color: "var(--neon-green)" }}>
               Simulated {batchResult.simulated_count} races successfully
             </p>
           )}
@@ -141,10 +144,13 @@ export default function ChipPlannerPage() {
               return (
                 <div
                   key={rv.race_id}
-                  className="rounded-xl p-3 transition-all"
+                  className={`glass-card rounded-xl p-3 transition-all ${isBest ? chipInfo.glow : ""}`}
                   style={{
-                    background: isBest ? `${chipInfo.color}15` : "var(--card-bg)",
-                    border: isBest ? `2px solid ${chipInfo.color}` : "1px solid var(--card-border)",
+                    ...(isBest ? {
+                      background: `${chipInfo.color}12`,
+                      borderColor: chipInfo.color,
+                      borderWidth: "2px",
+                    } : {}),
                   }}
                 >
                   <div className="text-[10px] text-gray-500 font-semibold mb-1">R{rv.race_round}</div>
@@ -173,8 +179,11 @@ export default function ChipPlannerPage() {
             })}
           </div>
 
+          {/* Racing stripe before summary */}
+          <div className="racing-stripe" />
+
           {/* Summary Table */}
-          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="glass-card rounded-2xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm" style={{ minWidth: 500 }}>
                 <thead>
@@ -190,12 +199,12 @@ export default function ChipPlannerPage() {
                       <td className="px-5 py-3">
                         <span className="font-semibold">{rv.race_name}</span>
                         {rv.race_id === currentChip.best_race_id && rv.chip_gain > 0 && (
-                          <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: chipInfo.color, color: "white" }}>BEST</span>
+                          <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: chipInfo.color, color: "#050508" }}>BEST</span>
                         )}
                       </td>
                       <td className="px-5 py-3 text-right font-mono text-gray-400">{rv.normal_points.toFixed(1)}</td>
                       <td className="px-5 py-3 text-right font-mono" style={{ color: chipInfo.color }}>{rv.chip_points.toFixed(1)}</td>
-                      <td className={`px-5 py-3 text-right font-mono font-bold ${rv.chip_gain > 0 ? "text-emerald-400" : "text-gray-500"}`}>
+                      <td className="px-5 py-3 text-right font-mono font-bold" style={{ color: rv.chip_gain > 0 ? "var(--neon-green)" : "#6b7280" }}>
                         {rv.chip_gain > 0 ? "+" : ""}{rv.chip_gain.toFixed(1)}
                       </td>
                     </tr>

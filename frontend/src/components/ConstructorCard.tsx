@@ -22,16 +22,24 @@ export default function ConstructorCard({
       whileHover={{ scale: 1.02, y: -1 }}
       whileTap={{ scale: 0.98 }}
       transition={{ duration: 0.15 }}
-      className={`relative rounded-xl cursor-pointer overflow-hidden ${selected ? "glow-red" : ""}`}
+      className={`relative rounded-xl cursor-pointer overflow-hidden glass-card ${selected ? "glow-red" : ""}`}
       style={{
         background: selected ? "var(--card-hover)" : "var(--card-bg)",
         border: `1px solid ${selected ? "var(--f1-red)" : "var(--card-border)"}`,
       }}
     >
+      {/* Team color gradient header bar */}
       <div
-        className="absolute top-0 left-0 w-full h-[2px]"
-        style={{ backgroundColor: constructor.color, opacity: selected ? 1 : 0.4 }}
+        className="h-[3px]"
+        style={{ background: `linear-gradient(90deg, ${constructor.color}, ${constructor.color}66)` }}
       />
+      {/* Team color glow on selected */}
+      {selected && (
+        <div
+          className="absolute inset-0 opacity-[0.06] pointer-events-none"
+          style={{ background: `radial-gradient(ellipse at top, ${constructor.color}, transparent 70%)` }}
+        />
+      )}
 
       <div className={compact ? "p-2.5" : "p-3.5"}>
         <div className="flex items-center justify-between">
@@ -61,8 +69,8 @@ export default function ConstructorCard({
               ${constructor.price}M
             </div>
             {constructor.expected_pts !== null && constructor.expected_pts !== undefined && (
-              <div className="text-[11px] font-mono text-emerald-400 mt-0.5">
-                {constructor.expected_pts.toFixed(1)} pts
+              <div className="text-[11px] font-mono mt-0.5" style={{ color: "var(--neon-green)" }}>
+                {constructor.expected_pts.toFixed(1)} xPts
               </div>
             )}
           </div>

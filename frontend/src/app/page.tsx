@@ -41,21 +41,57 @@ export default function TeamCalculator() {
   const [constructorSort, setConstructorSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "price", dir: "desc" });
 
   const [budget, setBudget] = useState(100);
-  const [nSimulations, setNSimulations] = useState(10000);
+  const [nSimulations, setNSimulations] = useState(50000);
   const [drsDriverId, setDrsDriverId] = useState<number | null>(null);
 
   const [selectedTeamIdx, setSelectedTeamIdx] = useState(0);
+  const [cachedStatus, setCachedStatus] = useState<string | null>(null);
+  const [cachedAt, setCachedAt] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.getDrivers(), api.getConstructors(), api.getRaces()]).then(
-      ([d, c, r]) => { setDrivers(d); setConstructors(c); setRaces(r); }
-    );
+    Promise.all([api.getDrivers(), api.getConstructors(), api.getRaces(), api.getNextRace()]).then(
+      ([d, c, r, nextRace]) => {
+        setDrivers(d); setConstructors(c); setRaces(r);
+        // Auto-select next race
+        if (nextRace && nextRace.id) {
+          setSelectedRaceId(nextRace.id);
+        }
+      }
+    ).catch(() => {});
   }, []);
 
+  // Auto-load cached predictions when race is selected
   useEffect(() => {
-    if (selectedRaceId) {
-      api.getPricePredictions(selectedRaceId).then(setPricePredictions).catch(() => {});
-    }
+    if (!selectedRaceId) return;
+    api.getPricePredictions(selectedRaceId).then(setPricePredictions).catch(() => {});
+    // Try to load cached simulation results
+    api.getCachedSimulation(selectedRaceId).then((data) => {
+      if (data.status === "ok" && data.results && data.results.length > 0) {
+        setSimResults(data.results);
+        setCachedStatus("cached");
+        setCachedAt(data.simulated_at);
+        setSimMeta({
+          race_id: data.race_id,
+          race_name: data.race_name,
+          n_simulations: 50000,
+          data_sources: [],
+          has_qualifying: false,
+          has_long_runs: false,
+          weather: null,
+          simulated_at: data.simulated_at || "",
+        });
+        // Refresh drivers/constructors with expected_pts
+        Promise.all([
+          api.getDrivers(selectedRaceId),
+          api.getConstructors(selectedRaceId),
+        ]).then(([ud, uc]) => {
+          setDrivers(ud);
+          setConstructors(uc);
+        }).catch(() => {});
+      } else {
+        setCachedStatus(null);
+      }
+    }).catch(() => {});
   }, [selectedRaceId]);
 
   const getSimResult = (assetType: string, assetId: number) =>
@@ -101,12 +137,13 @@ export default function TeamCalculator() {
       const { results, meta } = await api.runSimulation(selectedRaceId, nSimulations);
       setSimResults(results);
       setSimMeta(meta);
-      const [ud, uc, pp] = await Promise.all([
+      await Promise.all([
         api.getDrivers(selectedRaceId),
         api.getConstructors(selectedRaceId),
         api.getPricePredictions(selectedRaceId),
-      ]);
-      setDrivers(ud); setConstructors(uc); setPricePredictions(pp);
+      ]).then(([ud, uc, pp]) => {
+        setDrivers(ud); setConstructors(uc); setPricePredictions(pp);
+      }).catch(() => {});
     } finally { setSimulating(false); }
   }, [selectedRaceId, nSimulations]);
 
@@ -127,7 +164,7 @@ export default function TeamCalculator() {
       });
       setBestTeams(teams);
       setSelectedTeamIdx(0);
-    } finally { setLoading(false); }
+    } catch { setBestTeams([]); } finally { setLoading(false); }
   }, [selectedRaceId, budget, includeDrivers, excludeDrivers, includeConstructors, excludeConstructors, drsDriverId]);
 
   const sortItems = <T extends { price: number; expected_pts: number | null; code?: string; name?: string; id: number }>(
@@ -226,7 +263,12 @@ export default function TeamCalculator() {
           <p className="text-xs text-gray-500 mt-1">
             Monte Carlo simulation + brute-force optimization
             {selectedRaceId && races.find((r) => r.id === selectedRaceId)?.has_sprint && (
-              <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400">SPRINT WEEKEND</span>
+              <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: "rgba(255,208,0,0.15)", color: "var(--timing-yellow)", border: "1px solid rgba(255,208,0,0.3)" }}>SPRINT WEEKEND</span>
+            )}
+            {cachedStatus === "cached" && cachedAt && (
+              <span className="ml-2 text-[10px] font-mono" style={{ color: "var(--neon-cyan)" }}>
+                Cached {(() => { const mins = Math.round((Date.now() - new Date(cachedAt).getTime()) / 60000); return mins < 1 ? "just now" : `${mins}min ago`; })()}
+              </span>
             )}
           </p>
         </div>
@@ -235,13 +277,12 @@ export default function TeamCalculator() {
           <button
             onClick={handleSimulate}
             disabled={!selectedRaceId || simulating}
-            className="px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide uppercase transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
+            className="px-4 py-2 rounded-xl text-xs font-bold tracking-wide uppercase transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
             style={{
-              background: selectedRaceId && !simulating
-                ? "linear-gradient(135deg, #e10600, #b30500)"
-                : "var(--card-border)",
+              background: cachedStatus === "cached" ? "transparent" : selectedRaceId && !simulating ? "linear-gradient(135deg, #e10600, #b30500)" : "var(--card-border)",
               color: "white",
-              boxShadow: selectedRaceId && !simulating ? "0 4px 20px rgba(225,6,0,0.3)" : "none",
+              border: cachedStatus === "cached" ? "1px solid var(--card-border)" : "none",
+              boxShadow: cachedStatus !== "cached" && selectedRaceId && !simulating ? "0 4px 20px rgba(225,6,0,0.3)" : "none",
             }}
           >
             {simulating ? (
@@ -252,7 +293,7 @@ export default function TeamCalculator() {
             ) : (
               <span className="flex items-center gap-1.5">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                Simulate
+                {cachedStatus === "cached" ? "Re-run" : "Simulate"}
               </span>
             )}
           </button>
@@ -266,8 +307,7 @@ export default function TeamCalculator() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="rounded-xl overflow-hidden"
-            style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
+            className="rounded-xl overflow-hidden glass-card"
           >
             <div className="px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
               <div className="flex items-center gap-2">
@@ -276,7 +316,7 @@ export default function TeamCalculator() {
               </div>
               <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                {new Date(simMeta.simulated_at).toLocaleTimeString()}
+                {simMeta.simulated_at ? new Date(simMeta.simulated_at).toLocaleTimeString() : "N/A"}
               </div>
               <div className="text-[11px] font-mono text-gray-500">
                 {simMeta.n_simulations.toLocaleString()} sims
@@ -323,7 +363,7 @@ export default function TeamCalculator() {
         {/* Left Column: Tables */}
         <div className="space-y-6">
           {/* Drivers Table */}
-          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="rounded-2xl overflow-hidden glass-card">
             <div className="px-4 pt-4 pb-2 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400">Drivers</h2>
@@ -484,7 +524,7 @@ export default function TeamCalculator() {
           </div>
 
           {/* Constructors Table */}
-          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="rounded-2xl overflow-hidden glass-card">
             <div className="px-4 pt-4 pb-2 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400">Constructors</h2>
@@ -626,7 +666,7 @@ export default function TeamCalculator() {
 
         {/* Right Sidebar — Optimizer Panel */}
         <div className="space-y-4">
-          <div className="rounded-2xl overflow-hidden sticky top-8" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="rounded-2xl overflow-hidden sticky top-8 glass-card">
             {/* Optimizer Header */}
             <div className="px-5 pt-5 pb-3">
               <h3 className="text-sm font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
@@ -976,8 +1016,7 @@ export default function TeamCalculator() {
                   <button
                     key={idx}
                     onClick={() => setSelectedTeamIdx(idx)}
-                    className="w-full rounded-xl p-3 flex items-center justify-between transition-all hover:bg-white/[0.02]"
-                    style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
+                    className="w-full rounded-xl p-3 flex items-center justify-between transition-all hover:bg-white/[0.02] glass-card"
                   >
                     <div className="flex items-center gap-3">
                       <span className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold" style={{ background: "var(--card-border)", color: "#6b7280" }}>

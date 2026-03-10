@@ -40,18 +40,18 @@ export default function Statistics() {
   useEffect(() => {
     Promise.all([api.getDrivers(), api.getConstructors(), api.getRaces()]).then(
       ([d, c, r]) => { setDrivers(d); setConstructors(c); setRaces(r); }
-    );
+    ).catch(() => {});
   }, []);
 
   useEffect(() => {
     if (!selectedRaceId) return;
     Promise.all([api.getDrivers(selectedRaceId), api.getConstructors(selectedRaceId), api.getAllStats(selectedRaceId)])
-      .then(([d, c, b]) => { setDrivers(d); setConstructors(c); setBreakdowns(b); });
+      .then(([d, c, b]) => { setDrivers(d); setConstructors(c); setBreakdowns(b); }).catch(() => {});
   }, [selectedRaceId]);
 
   useEffect(() => {
     if (activeTab === "fixtures") {
-      api.getFixtureDifficulty(fixtureView).then(setFixtureData);
+      api.getFixtureDifficulty(fixtureView).then(setFixtureData).catch(() => {});
     }
   }, [activeTab, fixtureView]);
 
@@ -112,7 +112,7 @@ export default function Statistics() {
 
           {hasDriverSim && (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              <div className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+              <div className="glass-card rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
                 <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-5">Expected Points</h3>
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={driverChartData} margin={{ top: 0, right: 0, bottom: 0, left: -15 }}>
@@ -126,7 +126,7 @@ export default function Statistics() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <div className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+              <div className="glass-card rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
                 <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-5">Points Per Million (Value)</h3>
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={[...driverChartData].sort((a, b) => b.ppm - a.ppm)} margin={{ top: 0, right: 0, bottom: 0, left: -15 }}>
@@ -143,7 +143,7 @@ export default function Statistics() {
             </div>
           )}
 
-          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="glass-card rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--card-border)" }}>
@@ -163,8 +163,8 @@ export default function Statistics() {
                       </div>
                     </td>
                     <td className="px-5 py-3 text-right font-mono text-gray-400">${d.price}M</td>
-                    <td className="px-5 py-3 text-right font-mono font-semibold text-emerald-400">{hasDriverSim ? d.xPts.toFixed(1) : "—"}</td>
-                    <td className="px-5 py-3 text-right font-mono text-blue-400">{hasDriverSim ? d.ppm.toFixed(2) : "—"}</td>
+                    <td className="px-5 py-3 text-right font-mono font-semibold" style={{ color: "var(--neon-green)" }}>{hasDriverSim ? d.xPts.toFixed(1) : "\u2014"}</td>
+                    <td className="px-5 py-3 text-right font-mono text-blue-400">{hasDriverSim ? d.ppm.toFixed(2) : "\u2014"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -183,7 +183,7 @@ export default function Statistics() {
           )}
 
           {hasConstructorSim && (
-            <div className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <div className="glass-card rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
               <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-5">Expected Points by Constructor</h3>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={constructorChartData} margin={{ top: 0, right: 0, bottom: 20, left: -15 }}>
@@ -199,7 +199,7 @@ export default function Statistics() {
             </div>
           )}
 
-          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="glass-card rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--card-border)" }}>
@@ -218,8 +218,8 @@ export default function Statistics() {
                       </div>
                     </td>
                     <td className="px-5 py-3 text-right font-mono text-gray-400">${c.price}M</td>
-                    <td className="px-5 py-3 text-right font-mono font-semibold text-emerald-400">{hasConstructorSim ? c.xPts.toFixed(1) : "—"}</td>
-                    <td className="px-5 py-3 text-right font-mono text-blue-400">{hasConstructorSim ? c.ppm.toFixed(2) : "—"}</td>
+                    <td className="px-5 py-3 text-right font-mono font-semibold" style={{ color: "var(--neon-green)" }}>{hasConstructorSim ? c.xPts.toFixed(1) : "\u2014"}</td>
+                    <td className="px-5 py-3 text-right font-mono text-blue-400">{hasConstructorSim ? c.ppm.toFixed(2) : "\u2014"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -256,7 +256,7 @@ export default function Statistics() {
           </div>
 
           {compareIds.length >= 2 && (
-            <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <div className="glass-card rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
               <table className="w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--card-border)" }}>
@@ -345,7 +345,7 @@ export default function Statistics() {
               ))}
             </div>
 
-            <div className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <div className="glass-card rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
               <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-5">Points Breakdown by Category</h3>
               <div className="overflow-x-auto">
                 <div style={{ minWidth: breakdownView === "constructors" ? 500 : 700 }}>
@@ -389,7 +389,7 @@ export default function Statistics() {
               </div>
             </div>
 
-            <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <div className="glass-card rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm" style={{ minWidth: 700 }}>
                   <thead>
@@ -476,7 +476,7 @@ export default function Statistics() {
           </div>
 
           {fixtureData.length > 0 && (
-            <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <div className="glass-card rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
               <div className="overflow-x-auto">
                 <table className="text-xs" style={{ minWidth: fixtureData[0]?.fixtures.length * 44 + 120 }}>
                   <thead>

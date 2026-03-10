@@ -296,3 +296,40 @@ export interface SeasonSummary {
   drivers: SeasonDriverSummary[];
   races_completed: number;
 }
+
+export interface StrategyBrief {
+  race_name: string;
+  circuit_name: string;
+  top_pick: string;
+  value_play: string;
+  danger_zone: string;
+  drs_call: string;
+  circuit_traits: string[];
+  simulated_at: string;
+}
+
+export interface CompareDriverResult {
+  driver_id: number;
+  code: string;
+  name: string;
+  constructor_color: string;
+  pace_rating: number;
+  consistency: number;
+  value: number;
+  form_trend: "improving" | "stable" | "declining";
+  circuit_fit: number;
+  risk: number;
+  expected_pts: number;
+  price: number;
+}
+
+export interface CompareConstructorResult {
+  constructor_id: number;
+  name: string;
+  color: string;
+  pace_rating: number;
+  consistency: number;
+  value: number;
+  expected_pts: number;
+  price: number;
+}

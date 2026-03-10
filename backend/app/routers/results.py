@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -82,6 +83,8 @@ def get_results(race_id: int, db: Session = Depends(get_db)):
     out = []
     for r in results:
         driver = db.get(Driver, r.driver_id)
+        if not driver:
+            continue
         constructor = db.get(Constructor, driver.constructor_id) if driver else None
         out.append({
             "driver_id": r.driver_id,
@@ -108,12 +111,14 @@ def get_scorecard(race_id: int, db: Session = Depends(get_db)):
     scorecards: list[dict] = []
     for r in results:
         driver = db.get(Driver, r.driver_id)
+        if not driver:
+            continue
         constructor = db.get(Constructor, driver.constructor_id) if driver else None
 
         # Compute actual fantasy points
         q_pts = score_qualifying_driver(r.qualifying_position)
         r_pts = 0 if r.dnf else score_race_position(r.race_position)
-        positions_gained = r.qualifying_position - r.race_position if not r.dnf else 0
+        positions_gained = (r.qualifying_position or 0) - (r.race_position or 0) if not r.dnf else 0
         pos_pts = positions_gained  # +1 per position gained, -1 per lost
         ot_pts = r.overtakes
         fl_pts = FASTEST_LAP_PTS if r.fastest_lap else 0
@@ -157,6 +162,68 @@ def get_scorecard(race_id: int, db: Session = Depends(get_db)):
 
     scorecards.sort(key=lambda x: x["total_pts"], reverse=True)
     return scorecards
+
+
+@router.get("/{race_id}/auto")
+async def auto_ingest_race(race_id: int, db: Session = Depends(get_db)):
+    """Auto-fetch results from FastF1 if not already stored."""
+    race = db.get(Race, race_id)
+    if not race:
+        raise HTTPException(status_code=404, detail="Race not found")
+
+    # Check if results already exist
+    existing = db.query(RaceResult).filter_by(race_id=race_id).first()
+    if existing:
+        results = db.query(RaceResult).filter_by(race_id=race_id).order_by(RaceResult.race_position).all()
+        out = []
+        for r in results:
+            driver = db.get(Driver, r.driver_id)
+            constructor = db.get(Constructor, driver.constructor_id) if driver else None
+            out.append({
+                "driver_id": r.driver_id,
+                "code": driver.code if driver else "?",
+                "name": f"{driver.first_name} {driver.last_name}" if driver else "?",
+                "constructor_color": constructor.color if constructor else "#888",
+                "qualifying_position": r.qualifying_position,
+                "race_position": r.race_position,
+                "dnf": r.dnf,
+                "fastest_lap": r.fastest_lap,
+                "dotd": r.dotd,
+                "overtakes": r.overtakes,
+            })
+        return {"status": "exists", "results": out}
+
+    # Check if race has happened
+    from datetime import date
+    if race.date and race.date > date.today().isoformat():
+        return {"status": "pending", "message": "Race hasn't happened yet"}
+
+    # Try to fetch from FastF1
+    try:
+        from app.services.practice_data import fetch_race_results
+        year = int(race.date[:4]) if race.date else 2026
+        meeting_name = race.name.replace(" Grand Prix", "")
+        fetched = await asyncio.to_thread(fetch_race_results, year, meeting_name, db)
+
+        if fetched is None:
+            return {"status": "unavailable", "message": "Results not yet available from FastF1"}
+
+        for r in fetched:
+            db.add(RaceResult(
+                race_id=race_id,
+                driver_id=r["driver_id"],
+                qualifying_position=r["qualifying_position"],
+                race_position=r["race_position"],
+                dnf=r["dnf"],
+                fastest_lap=r["fastest_lap"],
+                dotd=r.get("dotd", False),
+                overtakes=r.get("overtakes", 0),
+            ))
+        db.commit()
+
+        return {"status": "ingested", "results": fetched, "count": len(fetched)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 @router.get("")

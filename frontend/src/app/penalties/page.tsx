@@ -19,7 +19,7 @@ export default function PenaltiesPage() {
     Promise.all([api.getPenaltyStatus(), api.getRaces()]).then(([pu, r]) => {
       setPuStatus(pu);
       setRaces(r);
-    });
+    }).catch(() => {});
   };
 
   useEffect(() => {
@@ -27,13 +27,17 @@ export default function PenaltiesPage() {
   }, []);
 
   const handleIncrement = async (driverId: number, componentType: string) => {
-    await api.incrementPuComponent(driverId, componentType);
-    loadData();
+    try {
+      await api.incrementPuComponent(driverId, componentType);
+      loadData();
+    } catch {}
   };
 
   const handleReset = async () => {
-    await api.resetPuAllocations();
-    loadData();
+    try {
+      await api.resetPuAllocations();
+      loadData();
+    } catch {}
   };
 
   const atRiskDrivers = puStatus.filter((d) => d.at_risk);
@@ -54,7 +58,7 @@ export default function PenaltiesPage() {
       {/* PU Allocation Table */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.05 }} className="space-y-4">
         <h2 className="text-xs font-bold uppercase tracking-widest text-gray-500">Power Unit Allocations</h2>
-        <div className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+        <div className="glass-card rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm" style={{ minWidth: 650 }}>
               <thead>
@@ -85,8 +89,8 @@ export default function PenaltiesPage() {
                             onClick={() => handleIncrement(driver.driver_id, comp)}
                             className="inline-flex items-center justify-center w-8 h-7 rounded-md text-[10px] font-bold cursor-pointer transition-transform hover:scale-110"
                             style={{
-                              background: pct >= 1 ? "rgba(239,68,68,0.2)" : pct >= 0.75 ? "rgba(245,158,11,0.2)" : "rgba(34,197,94,0.1)",
-                              color: pct >= 1 ? "#ef4444" : pct >= 0.75 ? "#f59e0b" : "#22c55e",
+                              background: pct >= 1 ? "rgba(225,6,0,0.2)" : pct >= 0.75 ? "rgba(255,208,0,0.15)" : "rgba(0,255,135,0.1)",
+                              color: pct >= 1 ? "var(--f1-red)" : pct >= 0.75 ? "var(--timing-yellow)" : "var(--neon-green)",
                               border: "none",
                             }}
                             title={`Click to add new ${comp} for ${driver.driver_code}`}
@@ -98,9 +102,9 @@ export default function PenaltiesPage() {
                     })}
                     <td className="px-4 py-3 text-center">
                       {driver.at_risk ? (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400">AT RISK</span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold glow-red" style={{ background: "rgba(225,6,0,0.2)", color: "var(--f1-red)" }}>AT RISK</span>
                       ) : (
-                        <span className="text-[10px] text-gray-500">OK</span>
+                        <span className="text-[10px]" style={{ color: "var(--neon-green)" }}>OK</span>
                       )}
                     </td>
                   </tr>
@@ -130,15 +134,16 @@ export default function PenaltiesPage() {
           {penaltyFriendly.map((race, i) => (
             <div
               key={race.id}
-              className="rounded-xl p-4 transition-all"
-              style={{
-                background: i < 3 ? "rgba(34,197,94,0.08)" : "var(--card-bg)",
-                border: i < 3 ? "1px solid rgba(34,197,94,0.3)" : "1px solid var(--card-border)",
-              }}
+              className={`rounded-xl p-4 transition-all ${i >= 3 ? "glass-card" : ""} ${i < 3 ? "glow-green" : ""}`}
+              style={i < 3 ? {
+                background: "rgba(0,255,135,0.06)",
+                border: "1px solid rgba(0,255,135,0.25)",
+                borderRadius: 12,
+              } : undefined}
             >
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] text-gray-500 font-semibold">R{race.round}</span>
-                {i < 3 && <span className="text-[9px] font-bold text-emerald-400 uppercase">Recommended</span>}
+                {i < 3 && <span className="text-[9px] font-bold uppercase" style={{ color: "var(--neon-green)" }}>Recommended</span>}
               </div>
               <p className="text-sm font-bold truncate">{race.name.replace(" Grand Prix", "")}</p>
               <div className="mt-2 flex items-center gap-2">
@@ -147,7 +152,7 @@ export default function PenaltiesPage() {
                     className="h-full rounded-full"
                     style={{
                       width: `${race.cost * 100}%`,
-                      background: race.cost < 0.35 ? "#22c55e" : race.cost < 0.6 ? "#f59e0b" : "#ef4444",
+                      background: race.cost < 0.35 ? "var(--neon-green)" : race.cost < 0.6 ? "var(--timing-yellow)" : "var(--f1-red)",
                     }}
                   />
                 </div>
@@ -164,16 +169,16 @@ export default function PenaltiesPage() {
       {/* At-Risk Drivers Summary */}
       {atRiskDrivers.length > 0 && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}
-          className="rounded-2xl p-5" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}
+          className="rounded-2xl p-5 glow-red" style={{ background: "rgba(225,6,0,0.06)", border: "1px solid rgba(225,6,0,0.2)" }}
         >
-          <h3 className="text-xs font-bold uppercase tracking-widest text-red-400 mb-3">Drivers at Penalty Risk</h3>
+          <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "var(--f1-red)" }}>Drivers at Penalty Risk</h3>
           <div className="flex flex-wrap gap-2">
             {atRiskDrivers.map((d) => {
               const overLimit = COMPONENTS.filter((c) => (d.components[c] || 0) >= COMPONENT_LIMITS[c]);
               return (
-                <div key={d.driver_id} className="rounded-lg px-3 py-2" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+                <div key={d.driver_id} className="glass-card rounded-lg px-3 py-2">
                   <span className="font-bold text-sm" style={{ color: d.driver_color }}>{d.driver_code}</span>
-                  <span className="text-[10px] text-gray-500 ml-2">{overLimit.join(", ")}</span>
+                  <span className="text-[10px] ml-2" style={{ color: "var(--f1-red)" }}>{overLimit.join(", ")}</span>
                 </div>
               );
             })}

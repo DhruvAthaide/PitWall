@@ -30,7 +30,7 @@ export default function WhatIfPage() {
   // Modified team state
   const [modDrivers, setModDrivers] = useState<number[]>([]);
   const [modConstructors, setModConstructors] = useState<number[]>([]);
-  const [modDrs, setModDrs] = useState<number>(0);
+  const [modDrs, setModDrs] = useState<number | null>(null);
 
   const [result, setResult] = useState<WhatIfResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -54,12 +54,16 @@ export default function WhatIfPage() {
   const toggleDriver = (id: number) => {
     setModDrivers((prev) => {
       if (prev.includes(id)) {
-        if (modDrs === id) setModDrs(prev.filter((x) => x !== id)[0] || 0);
         return prev.filter((x) => x !== id);
       }
       if (prev.length >= 5) return prev;
       return [...prev, id];
     });
+    // Handle DRS separately
+    if (modDrivers.includes(id) && modDrs === id) {
+      const remaining = modDrivers.filter((x) => x !== id);
+      setModDrs(remaining[0] || null);
+    }
     setResult(null);
   };
 
@@ -95,29 +99,29 @@ export default function WhatIfPage() {
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight">What If</h1>
-          <p className="text-xs sm:text-sm text-gray-500 mt-1">Compare alternative team picks vs your actual team</p>
+          <p className="text-xs sm:text-sm mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>Compare alternative team picks vs your actual team</p>
         </div>
         <RaceSelector races={races} selectedRaceId={selectedRaceId} onSelect={setSelectedRaceId} />
       </motion.div>
 
       {!hasTeam && (
         <div className="text-center py-16">
-          <p className="text-sm text-gray-500 font-medium">No Team Saved</p>
-          <p className="text-xs text-gray-600 mt-1">Save your team in My Team first</p>
+          <p className="text-sm font-medium" style={{ color: "rgba(255,255,255,0.4)" }}>No Team Saved</p>
+          <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.25)" }}>Save your team in My Team first</p>
         </div>
       )}
 
       {hasTeam && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
           {/* Modified Team Builder */}
-          <div className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
-            <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">
+          <div className="glass-card p-5">
+            <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "var(--neon-cyan)" }}>
               Alternative Team ({modDrivers.length}/5 drivers, {modConstructors.length}/2 constructors)
             </h3>
 
             {/* Drivers */}
             <div className="mb-3">
-              <p className="text-[10px] text-gray-500 mb-1.5">Drivers</p>
+              <p className="text-[10px] mb-1.5" style={{ color: "rgba(255,255,255,0.35)" }}>Drivers</p>
               <div className="flex flex-wrap gap-1.5">
                 {drivers.map((d) => {
                   const sel = modDrivers.includes(d.id);
@@ -131,8 +135,8 @@ export default function WhatIfPage() {
                       }
                     >
                       {d.code}
-                      {sel && !isOrig && <span className="ml-0.5 text-emerald-400">+</span>}
-                      {!sel && isOrig && <span className="ml-0.5 text-red-400">-</span>}
+                      {sel && !isOrig && <span className="ml-0.5" style={{ color: "var(--neon-green)" }}>+</span>}
+                      {!sel && isOrig && <span className="ml-0.5" style={{ color: "var(--f1-red)" }}>-</span>}
                     </button>
                   );
                 })}
@@ -142,14 +146,14 @@ export default function WhatIfPage() {
             {/* DRS */}
             {modDrivers.length > 0 && (
               <div className="mb-3">
-                <p className="text-[10px] text-gray-500 mb-1.5">DRS Captain</p>
+                <p className="text-[10px] mb-1.5" style={{ color: "var(--neon-purple)" }}>DRS Captain</p>
                 <div className="flex flex-wrap gap-1.5">
                   {modDrivers.map((did) => {
                     const d = drivers.find((dr) => dr.id === did);
                     return (
                       <button key={did} onClick={() => { setModDrs(did); setResult(null); }}
-                        className="px-2 py-1 rounded text-[9px] font-bold"
-                        style={modDrs === did ? { background: "var(--f1-red)", color: "white" } : { background: "var(--card-border)", color: "#9ca3af" }}
+                        className={`px-2 py-1 rounded text-[9px] font-bold ${modDrs === did ? "glow-purple" : ""}`}
+                        style={modDrs === did ? { background: "var(--neon-purple)", color: "white" } : { background: "var(--card-border)", color: "#9ca3af" }}
                       >
                         {d?.code}
                       </button>
@@ -161,7 +165,7 @@ export default function WhatIfPage() {
 
             {/* Constructors */}
             <div className="mb-4">
-              <p className="text-[10px] text-gray-500 mb-1.5">Constructors</p>
+              <p className="text-[10px] mb-1.5" style={{ color: "rgba(255,255,255,0.35)" }}>Constructors</p>
               <div className="flex flex-wrap gap-1.5">
                 {constructors.map((c) => {
                   const sel = modConstructors.includes(c.id);
@@ -175,8 +179,8 @@ export default function WhatIfPage() {
                       }
                     >
                       {c.name}
-                      {sel && !isOrig && <span className="ml-0.5 text-emerald-400">+</span>}
-                      {!sel && isOrig && <span className="ml-0.5 text-red-400">-</span>}
+                      {sel && !isOrig && <span className="ml-0.5" style={{ color: "var(--neon-green)" }}>+</span>}
+                      {!sel && isOrig && <span className="ml-0.5" style={{ color: "var(--f1-red)" }}>-</span>}
                     </button>
                   );
                 })}
@@ -185,7 +189,7 @@ export default function WhatIfPage() {
 
             <button onClick={handleCompare}
               disabled={!selectedRaceId || loading || modDrivers.length !== 5 || modConstructors.length !== 2 || !modDrs}
-              className="px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all disabled:opacity-30"
+              className="px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all disabled:opacity-30 glow-red"
               style={{ background: "var(--f1-red)" }}
             >
               {loading ? "Comparing..." : "Compare Teams"}
@@ -196,19 +200,19 @@ export default function WhatIfPage() {
           {result && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
               {/* Differential */}
-              <div className="rounded-2xl p-5 text-center"
+              <div className={`glass-card p-5 text-center ${result.differential > 0 ? "glow-green" : result.differential < 0 ? "glow-red" : ""}`}
                 style={{
-                  background: result.differential > 0 ? "rgba(34,197,94,0.06)" : result.differential < 0 ? "rgba(239,68,68,0.06)" : "var(--card-bg)",
-                  border: result.differential > 0 ? "1px solid rgba(34,197,94,0.25)" : result.differential < 0 ? "1px solid rgba(239,68,68,0.25)" : "1px solid var(--card-border)",
+                  background: result.differential > 0 ? "rgba(0,255,135,0.06)" : result.differential < 0 ? "rgba(225,6,0,0.06)" : "var(--card-bg)",
+                  border: result.differential > 0 ? "1px solid rgba(0,255,135,0.25)" : result.differential < 0 ? "1px solid rgba(225,6,0,0.25)" : "1px solid var(--card-border)",
                 }}
               >
-                <div className="text-[10px] uppercase tracking-widest text-gray-500 font-semibold mb-1">
+                <div className="text-[10px] uppercase tracking-widest font-semibold mb-1" style={{ color: "rgba(255,255,255,0.4)" }}>
                   {result.differential > 0 ? "Alternative team scores more" : result.differential < 0 ? "Your team scores more" : "Teams are equal"}
                 </div>
-                <div className={`text-3xl font-black font-mono ${result.differential > 0 ? "text-emerald-400" : result.differential < 0 ? "text-red-400" : "text-gray-500"}`}>
+                <div className="text-3xl font-black font-mono" style={{ color: result.differential > 0 ? "var(--neon-green)" : result.differential < 0 ? "var(--f1-red)" : "rgba(255,255,255,0.4)" }}>
                   {result.differential > 0 ? "+" : ""}{result.differential.toFixed(1)} pts
                 </div>
-                <div className="flex justify-center gap-6 mt-2 text-xs text-gray-400">
+                <div className="flex justify-center gap-6 mt-2 text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
                   <span>Your Team: <span className="font-mono text-white">{result.original_total.toFixed(1)}</span></span>
                   <span>Alt Team: <span className="font-mono text-white">{result.modified_total.toFixed(1)}</span></span>
                 </div>
@@ -216,25 +220,26 @@ export default function WhatIfPage() {
 
               {/* Swaps Impact */}
               {result.swaps.length > 0 && (
-                <div className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">Swap Impact</h3>
+                <div className="glass-card p-5">
+                  <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: "var(--neon-cyan)" }}>Swap Impact</h3>
+                  <div className="racing-stripe mb-3" />
                   <div className="space-y-2">
                     {result.swaps.map((s, i) => (
                       <div key={i} className="flex items-center gap-3 py-2">
                         <div className="flex items-center gap-1.5">
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: "rgba(239,68,68,0.15)", color: "#ef4444" }}>OUT</span>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: "rgba(225,6,0,0.15)", color: "var(--f1-red)" }}>OUT</span>
                           <div className="w-1.5 h-4 rounded-full" style={{ backgroundColor: s.out.color }} />
                           <span className="text-sm font-semibold">{s.out.name}</span>
-                          <span className="text-[10px] font-mono text-gray-500">{s.out.scored_pts.toFixed(1)}</span>
+                          <span className="text-[10px] font-mono" style={{ color: "rgba(255,255,255,0.35)" }}>{s.out.scored_pts.toFixed(1)}</span>
                         </div>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4b5563" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
                         <div className="flex items-center gap-1.5">
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>IN</span>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: "rgba(0,255,135,0.15)", color: "var(--neon-green)" }}>IN</span>
                           <div className="w-1.5 h-4 rounded-full" style={{ backgroundColor: s.in.color }} />
                           <span className="text-sm font-semibold">{s.in.name}</span>
-                          <span className="text-[10px] font-mono text-gray-500">{s.in.scored_pts.toFixed(1)}</span>
+                          <span className="text-[10px] font-mono" style={{ color: "rgba(255,255,255,0.35)" }}>{s.in.scored_pts.toFixed(1)}</span>
                         </div>
-                        <span className={`ml-auto text-sm font-mono font-bold ${s.diff > 0 ? "text-emerald-400" : s.diff < 0 ? "text-red-400" : "text-gray-500"}`}>
+                        <span className="ml-auto text-sm font-mono font-bold" style={{ color: s.diff > 0 ? "var(--neon-green)" : s.diff < 0 ? "var(--f1-red)" : "rgba(255,255,255,0.4)" }}>
                           {s.diff > 0 ? "+" : ""}{s.diff.toFixed(1)}
                         </span>
                       </div>
@@ -249,20 +254,21 @@ export default function WhatIfPage() {
                   { label: "Your Team", breakdown: result.original_breakdown, total: result.original_total },
                   { label: "Alternative Team", breakdown: result.modified_breakdown, total: result.modified_total },
                 ].map((side) => (
-                  <div key={side.label} className="rounded-xl p-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+                  <div key={side.label} className="glass-card p-4">
                     <div className="flex justify-between items-center mb-3">
-                      <h4 className="text-xs font-bold uppercase tracking-widest text-gray-500">{side.label}</h4>
-                      <span className="text-sm font-mono font-bold">{side.total.toFixed(1)}</span>
+                      <h4 className="text-xs font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.4)" }}>{side.label}</h4>
+                      <span className="text-sm font-mono font-bold" style={{ color: "var(--neon-green)" }}>{side.total.toFixed(1)}</span>
                     </div>
+                    <div className="racing-stripe mb-3" />
                     <div className="space-y-1.5">
                       {side.breakdown.map((b) => (
                         <div key={`${b.asset_type}-${b.asset_id}`} className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <div className="w-1.5 h-3 rounded-full" style={{ backgroundColor: b.color }} />
                             <span className="text-xs font-semibold">{b.name}</span>
-                            {b.multiplier === 2 && <span className="text-[8px] font-bold px-1 rounded" style={{ background: "var(--f1-red)", color: "white" }}>2x</span>}
+                            {b.multiplier === 2 && <span className="text-[8px] font-bold px-1 rounded" style={{ background: "var(--neon-purple)", color: "white" }}>2x</span>}
                           </div>
-                          <span className="text-xs font-mono text-gray-400">{b.scored_pts.toFixed(1)}</span>
+                          <span className="text-xs font-mono" style={{ color: "var(--neon-green)" }}>{b.scored_pts.toFixed(1)}</span>
                         </div>
                       ))}
                     </div>

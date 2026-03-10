@@ -266,3 +266,49 @@ class LeagueSimResult(BaseModel):
     expected_points: float
     win_probability: float
     differential: float  # vs my team
+
+
+class StrategyBriefResponse(BaseModel):
+    race_name: str
+    circuit_name: str
+    top_pick: str
+    value_play: str
+    danger_zone: str
+    drs_call: str
+    circuit_traits: list[str]
+    simulated_at: str
+
+
+class CachedSimResponse(BaseModel):
+    status: str
+    race_id: int
+    race_name: str
+    results: list[SimulationResultResponse]
+    simulated_at: Optional[str] = None
+    data_sources: list[str] = []
+
+
+class CompareDriverResult(BaseModel):
+    driver_id: int
+    code: str
+    name: str
+    constructor_color: str
+    pace_rating: float
+    consistency: float
+    value: float
+    form_trend: str  # "improving", "stable", "declining"
+    circuit_fit: float
+    risk: float
+    expected_pts: float
+    price: float
+
+
+class CompareConstructorResult(BaseModel):
+    constructor_id: int
+    name: str
+    color: str
+    pace_rating: float
+    consistency: float
+    value: float
+    expected_pts: float
+    price: float

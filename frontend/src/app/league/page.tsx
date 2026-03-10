@@ -31,7 +31,7 @@ export default function LeaguePage() {
       setRaces(r);
       setHasTeam(!!getMyTeam());
       setRivals(getRivals());
-    });
+    }).catch(() => {});
   }, []);
 
   const startAddRival = () => {
@@ -60,12 +60,16 @@ export default function LeaguePage() {
   const toggleRivalDriver = (id: number) => {
     setRivalDrivers((prev) => {
       if (prev.includes(id)) {
-        if (rivalDrs === id) setRivalDrs(null);
         return prev.filter((x) => x !== id);
       }
       if (prev.length >= 5) return prev;
       return [...prev, id];
     });
+    // Handle DRS separately
+    if (rivalDrivers.includes(id) && rivalDrs === id) {
+      const remaining = rivalDrivers.filter((x) => x !== id);
+      setRivalDrs(remaining[0] || null);
+    }
   };
 
   const toggleRivalConstructor = (id: number) => {
@@ -122,7 +126,7 @@ export default function LeaguePage() {
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-bold uppercase tracking-widest text-gray-500">Rival Teams ({rivals.length}/5)</h2>
               {rivals.length < 5 && editingRival === null && (
-                <button onClick={startAddRival} className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)", color: "#9ca3af" }}>
+                <button onClick={startAddRival} className="glass-card px-3 py-1.5 rounded-lg text-xs font-bold transition-all" style={{ color: "var(--neon-cyan)" }}>
                   + Add Rival
                 </button>
               )}
@@ -131,17 +135,18 @@ export default function LeaguePage() {
             {/* Existing rivals */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {rivals.map((rival, idx) => (
-                <div key={idx} className="rounded-xl p-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+                <div key={idx} className="glass-card rounded-xl p-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-bold text-sm">{rival.name}</span>
-                    <button onClick={() => removeRival(idx)} className="text-[10px] text-red-400 hover:text-red-300 font-semibold">Remove</button>
+                    <button onClick={() => removeRival(idx)} className="text-[10px] font-semibold transition-colors" style={{ color: "var(--f1-red)" }}>Remove</button>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {rival.driver_ids.map((did) => {
                       const d = drivers.find((dr) => dr.id === did);
+                      const isDrs = did === rival.drs_driver_id;
                       return (
-                        <span key={did} className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: "var(--card-border)" }}>
-                          {d?.code || did}{did === rival.drs_driver_id ? " (DRS)" : ""}
+                        <span key={did} className="px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ background: isDrs ? "rgba(153,69,255,0.15)" : "var(--card-border)", color: isDrs ? "var(--neon-purple)" : undefined }}>
+                          {d?.code || did}{isDrs ? " (DRS)" : ""}
                         </span>
                       );
                     })}
@@ -161,7 +166,7 @@ export default function LeaguePage() {
 
           {/* Rival Editor */}
           {editingRival !== null && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl p-5 space-y-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-card rounded-2xl p-5 space-y-4">
               <input
                 value={rivalName}
                 onChange={(e) => setRivalName(e.target.value)}
@@ -185,7 +190,7 @@ export default function LeaguePage() {
                         {d.code}
                         {sel && (
                           <span onClick={(e) => { e.stopPropagation(); setRivalDrs(isDrs ? null : d.id); }}
-                            className="ml-1 cursor-pointer" style={{ color: isDrs ? "var(--f1-red)" : "#4b5563" }}>
+                            className="ml-1 cursor-pointer" style={{ color: isDrs ? "var(--neon-purple)" : "#4b5563" }}>
                             {isDrs ? "[DRS]" : ""}
                           </span>
                         )}
@@ -201,7 +206,7 @@ export default function LeaguePage() {
                       return (
                         <button key={did} onClick={() => setRivalDrs(did)}
                           className="px-1.5 py-0.5 rounded text-[9px] font-bold"
-                          style={rivalDrs === did ? { background: "var(--f1-red)", color: "white" } : { background: "var(--card-border)", color: "#9ca3af" }}
+                          style={rivalDrs === did ? { background: "var(--neon-purple)", color: "white" } : { background: "var(--card-border)", color: "#9ca3af" }}
                         >
                           {d?.code}
                         </button>
@@ -263,31 +268,34 @@ export default function LeaguePage() {
                 const barWidth = Math.round(r.win_probability * 100);
                 return (
                   <div key={r.team_name}
-                    className="rounded-xl p-4"
-                    style={{
-                      background: isMe ? "rgba(34,197,94,0.06)" : "var(--card-bg)",
-                      border: isMe ? "1px solid rgba(34,197,94,0.25)" : "1px solid var(--card-border)",
-                    }}
+                    className={`rounded-xl p-4 ${isMe ? "glow-green" : "glass-card"}`}
+                    style={isMe ? {
+                      background: "rgba(0,255,135,0.06)",
+                      border: "1px solid rgba(0,255,135,0.25)",
+                      borderRadius: 12,
+                    } : undefined}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-lg font-black text-gray-600">#{i + 1}</span>
+                        <span className={`text-lg font-black w-8 h-8 rounded-lg flex items-center justify-center ${i === 0 ? "pos-badge-1" : i === 1 ? "pos-badge-2" : i === 2 ? "pos-badge-3" : "text-gray-600"}`}>
+                          {i + 1}
+                        </span>
                         <span className="font-bold text-sm">{r.team_name}</span>
-                        {isMe && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400">YOU</span>}
+                        {isMe && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: "rgba(0,255,135,0.15)", color: "var(--neon-green)" }}>YOU</span>}
                       </div>
-                      <span className="text-sm font-mono font-bold text-white">{r.expected_points.toFixed(1)} pts</span>
+                      <span className="text-sm font-mono font-bold" style={{ color: "var(--neon-green)" }}>{r.expected_points.toFixed(1)} pts</span>
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: "var(--card-border)" }}>
                         <div className="h-full rounded-full transition-all duration-700"
-                          style={{ width: `${barWidth}%`, background: isMe ? "#22c55e" : "var(--f1-red)" }} />
+                          style={{ width: `${barWidth}%`, background: isMe ? "var(--neon-green)" : "var(--f1-red)" }} />
                       </div>
-                      <span className="text-xs font-mono font-bold" style={{ color: isMe ? "#22c55e" : "#f59e0b", minWidth: 40 }}>
+                      <span className="text-xs font-mono font-bold" style={{ color: isMe ? "var(--neon-green)" : "var(--timing-yellow)", minWidth: 40 }}>
                         {(r.win_probability * 100).toFixed(0)}%
                       </span>
                     </div>
                     {!isMe && (
-                      <p className={`text-[10px] font-mono mt-1 ${r.differential > 0 ? "text-emerald-400" : r.differential < 0 ? "text-red-400" : "text-gray-500"}`}>
+                      <p className="text-[10px] font-mono mt-1" style={{ color: r.differential > 0 ? "var(--neon-green)" : r.differential < 0 ? "var(--f1-red)" : "#6b7280" }}>
                         {r.differential > 0 ? "+" : ""}{r.differential.toFixed(1)} vs your team
                       </p>
                     )}

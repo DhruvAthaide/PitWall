@@ -129,6 +129,19 @@ const strategyItems = [
   },
 ];
 
+const analysisItems = [
+  {
+    href: "/compare",
+    label: "Head-to-Head",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M16 3h5v5" /><path d="M8 3H3v5" />
+        <path d="M12 22V8" /><path d="M21 3l-9 9" /><path d="M3 3l9 9" />
+      </svg>
+    ),
+  },
+];
+
 const historyItems = [
   {
     href: "/results",
@@ -184,7 +197,7 @@ function NavItem({ item, pathname, onClose }: { item: typeof toolItems[0]; pathn
           <motion.div
             layoutId="sidebar-active"
             className="absolute inset-0 rounded-xl"
-            style={{ background: "rgba(225, 6, 0, 0.12)", border: "1px solid rgba(225, 6, 0, 0.2)" }}
+            style={{ background: "rgba(225, 6, 0, 0.12)", borderLeft: "2px solid var(--f1-red)", borderRadius: "0 12px 12px 0" }}
             transition={{ type: "spring", duration: 0.4, bounce: 0.15 }}
           />
         )}
@@ -197,24 +210,38 @@ function NavItem({ item, pathname, onClose }: { item: typeof toolItems[0]; pathn
   );
 }
 
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="pt-4 pb-1">
+      <div className="racing-stripe mx-3 mb-2" />
+      <p className="text-[10px] uppercase tracking-[0.15em] text-gray-600 font-semibold px-3 mb-2">
+        {label}
+      </p>
+    </div>
+  );
+}
+
 export default function Sidebar({ onClose }: SidebarProps) {
   const pathname = usePathname();
 
   return (
     <aside
-      className="w-[240px] sm:w-[280px] lg:w-[240px] h-full flex flex-col border-r"
+      className="w-[240px] sm:w-[280px] lg:w-[240px] h-full flex flex-col border-r carbon-texture"
       style={{ background: "var(--surface)", borderColor: "var(--card-border)" }}
     >
       {/* Logo */}
       <div className="p-6 pb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center font-black text-white text-[10px] tracking-tighter"
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center font-black text-white text-[9px] tracking-tighter"
             style={{ background: "linear-gradient(135deg, #e10600, #b30500)" }}
           >
-            PW
+            DRS
           </div>
           <div>
-            <h1 className="text-sm font-bold tracking-tight text-white">PitWall</h1>
+            <h1 className="text-sm font-bold tracking-tight">
+              <span className="text-white">Fantasy</span>
+              <span style={{ color: "var(--f1-red)" }}>DRS</span>
+            </h1>
             <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-medium">F1 Fantasy</p>
           </div>
         </div>
@@ -233,42 +260,35 @@ export default function Sidebar({ onClose }: SidebarProps) {
           <NavItem key={item.href} item={item} pathname={pathname} onClose={onClose} />
         ))}
 
-        <div className="pt-3 pb-1">
-          <p className="text-[10px] uppercase tracking-[0.15em] text-gray-600 font-semibold px-3 mb-2">
-            Tools
-          </p>
-        </div>
+        <SectionDivider label="Tools" />
         {toolItems.map((item) => (
           <NavItem key={item.href} item={item} pathname={pathname} onClose={onClose} />
         ))}
 
-        <div className="pt-4 pb-1">
-          <p className="text-[10px] uppercase tracking-[0.15em] text-gray-600 font-semibold px-3 mb-2">
-            Strategy
-          </p>
-        </div>
+        <SectionDivider label="Strategy" />
         {strategyItems.map((item) => (
           <NavItem key={item.href} item={item} pathname={pathname} onClose={onClose} />
         ))}
 
-        <div className="pt-4 pb-1">
-          <p className="text-[10px] uppercase tracking-[0.15em] text-gray-600 font-semibold px-3 mb-2">
-            History
-          </p>
-        </div>
+        <SectionDivider label="Analysis" />
+        {analysisItems.map((item) => (
+          <NavItem key={item.href} item={item} pathname={pathname} onClose={onClose} />
+        ))}
+
+        <SectionDivider label="History" />
         {historyItems.map((item) => (
           <NavItem key={item.href} item={item} pathname={pathname} onClose={onClose} />
         ))}
       </nav>
 
       {/* Footer */}
-      <div className="p-4 m-3 mt-0 rounded-xl" style={{ background: "var(--card-bg)" }}>
+      <div className="p-4 m-3 mt-0 rounded-xl glass-card">
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-green-500 pulse-glow" />
+          <div className="w-2 h-2 rounded-full pulse-glow" style={{ background: "var(--neon-green)" }} />
           <span className="text-[11px] text-gray-400 font-medium">2026 Season</span>
         </div>
         <p className="text-[10px] text-gray-600 mt-1">
-          R1: Australian GP - Mar 8
+          Predictions auto-updated
         </p>
       </div>
     </aside>

@@ -16,7 +16,7 @@ export default function TransfersPage() {
   const [searched, setSearched] = useState(false);
 
   useEffect(() => {
-    api.getRaces().then(setRaces);
+    api.getRaces().then(setRaces).catch(() => {});
     setHasTeam(!!getMyTeam());
   }, []);
 
@@ -33,7 +33,7 @@ export default function TransfersPage() {
       });
       setSuggestions(data);
       setSearched(true);
-    } catch { setSearched(true); }
+    } catch { setSuggestions([]); setSearched(true); }
     setLoading(false);
   };
 
@@ -90,18 +90,18 @@ export default function TransfersPage() {
           {suggestions.map((s, i) => (
             <div
               key={`${s.out_id}-${s.in_id}`}
-              className="rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3"
-              style={{
-                background: i === 0 ? "rgba(34,197,94,0.06)" : "var(--card-bg)",
-                border: i === 0 ? "1px solid rgba(34,197,94,0.25)" : "1px solid var(--card-border)",
-              }}
+              className={`glass-card rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3 ${i === 0 ? "glow-green" : ""}`}
+              style={i === 0 ? {
+                background: "rgba(0,255,135,0.04)",
+                borderColor: "rgba(0,255,135,0.25)",
+              } : {}}
             >
               {/* Rank */}
               <div className="text-lg font-black text-gray-600 w-8 shrink-0">#{i + 1}</div>
 
               {/* OUT */}
               <div className="flex items-center gap-2 min-w-[120px]">
-                <div className="px-2 py-1 rounded-lg text-xs font-bold" style={{ background: "rgba(239,68,68,0.15)", color: "#ef4444" }}>OUT</div>
+                <div className="px-2 py-1 rounded-lg text-xs font-bold" style={{ background: "rgba(225,6,0,0.15)", color: "var(--f1-red)" }}>OUT</div>
                 <div className="flex items-center gap-1.5">
                   <div className="w-1.5 h-4 rounded-full" style={{ backgroundColor: s.out_color }} />
                   <span className="font-semibold text-sm">{s.out_name}</span>
@@ -110,13 +110,13 @@ export default function TransfersPage() {
               </div>
 
               {/* Arrow */}
-              <div className="hidden sm:block text-gray-600">
+              <div className="hidden sm:block" style={{ color: "var(--neon-cyan)" }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
               </div>
 
               {/* IN */}
               <div className="flex items-center gap-2 min-w-[120px]">
-                <div className="px-2 py-1 rounded-lg text-xs font-bold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>IN</div>
+                <div className="px-2 py-1 rounded-lg text-xs font-bold" style={{ background: "rgba(0,255,135,0.15)", color: "var(--neon-green)" }}>IN</div>
                 <div className="flex items-center gap-1.5">
                   <div className="w-1.5 h-4 rounded-full" style={{ backgroundColor: s.in_color }} />
                   <span className="font-semibold text-sm">{s.in_name}</span>
@@ -128,13 +128,13 @@ export default function TransfersPage() {
               <div className="flex items-center gap-4 sm:ml-auto">
                 <div className="text-right">
                   <div className="text-[10px] text-gray-500 uppercase tracking-wider">Gain</div>
-                  <div className={`text-sm font-bold font-mono ${s.points_gained > 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  <div className="text-sm font-bold font-mono" style={{ color: s.points_gained > 0 ? "var(--neon-green)" : "var(--f1-red)" }}>
                     {s.points_gained > 0 ? "+" : ""}{s.points_gained.toFixed(1)}
                   </div>
                 </div>
                 <div className="text-right">
                   <div className="text-[10px] text-gray-500 uppercase tracking-wider">Cost</div>
-                  <div className={`text-sm font-mono ${s.cost_delta > 0 ? "text-red-400" : s.cost_delta < 0 ? "text-emerald-400" : "text-gray-500"}`}>
+                  <div className="text-sm font-mono" style={{ color: s.cost_delta > 0 ? "var(--f1-red)" : s.cost_delta < 0 ? "var(--neon-green)" : "#6b7280" }}>
                     {s.cost_delta > 0 ? "+" : ""}{s.cost_delta.toFixed(1)}M
                   </div>
                 </div>

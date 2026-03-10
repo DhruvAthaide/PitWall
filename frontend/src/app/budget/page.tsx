@@ -14,12 +14,12 @@ export default function BudgetBuilder() {
   const [sortKey, setSortKey] = useState<"price" | "ppm" | "change">("ppm");
   const [filterType, setFilterType] = useState<"all" | "driver" | "constructor">("all");
 
-  useEffect(() => { api.getRaces().then(setRaces); }, []);
+  useEffect(() => { api.getRaces().then(setRaces).catch(() => {}); }, []);
 
   useEffect(() => {
     if (!selectedRaceId) return;
     setLoading(true);
-    api.getPricePredictions(selectedRaceId).then((p) => { setPredictions(p); setLoading(false); });
+    api.getPricePredictions(selectedRaceId).then((p) => { setPredictions(p); }).catch(() => {}).finally(() => setLoading(false));
   }, [selectedRaceId]);
 
   const filtered = predictions
@@ -32,10 +32,10 @@ export default function BudgetBuilder() {
 
   const categoryBadge = (cat: string) => {
     const styles: Record<string, { bg: string; text: string; border: string }> = {
-      great: { bg: "rgba(34,197,94,0.1)", text: "#22c55e", border: "rgba(34,197,94,0.2)" },
-      good: { bg: "rgba(34,197,94,0.06)", text: "#86efac", border: "rgba(34,197,94,0.1)" },
-      poor: { bg: "rgba(249,115,22,0.08)", text: "#f97316", border: "rgba(249,115,22,0.15)" },
-      terrible: { bg: "rgba(239,68,68,0.08)", text: "#ef4444", border: "rgba(239,68,68,0.15)" },
+      great: { bg: "rgba(0,255,135,0.1)", text: "var(--neon-green)", border: "rgba(0,255,135,0.2)" },
+      good: { bg: "rgba(0,255,135,0.06)", text: "var(--neon-green)", border: "rgba(0,255,135,0.1)" },
+      poor: { bg: "rgba(255,208,0,0.08)", text: "var(--timing-yellow)", border: "rgba(255,208,0,0.15)" },
+      terrible: { bg: "rgba(225,6,0,0.08)", text: "var(--f1-red)", border: "rgba(225,6,0,0.15)" },
     };
     const s = styles[cat] || styles.poor;
     return (
@@ -57,7 +57,7 @@ export default function BudgetBuilder() {
 
       {/* Filters */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-        <div className="flex rounded-xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+        <div className="flex rounded-xl overflow-hidden glass-card">
           {(["all", "driver", "constructor"] as const).map((t) => (
             <button
               key={t}
@@ -75,8 +75,8 @@ export default function BudgetBuilder() {
         <select
           value={sortKey}
           onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
-          className="text-xs font-medium px-3 py-2 rounded-xl appearance-none cursor-pointer"
-          style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)", color: "#9ca3af" }}
+          className="text-xs font-medium px-3 py-2 rounded-xl appearance-none cursor-pointer glass-card"
+          style={{ color: "#9ca3af" }}
         >
           <option value="ppm">Sort by PPM</option>
           <option value="price">Sort by Price</option>
@@ -88,17 +88,17 @@ export default function BudgetBuilder() {
       <AnimatePresence>
         {filtered.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid rgba(34,197,94,0.15)" }}>
+            <div className="glass-card rounded-2xl p-5 glow-green" style={{ borderColor: "rgba(0,255,135,0.15)" }}>
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                <h3 className="text-xs font-bold uppercase tracking-widest text-emerald-400">Value Picks</h3>
+                <div className="w-2 h-2 rounded-full" style={{ background: "var(--neon-green)" }} />
+                <h3 className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--neon-green)" }}>Value Picks</h3>
               </div>
               <div className="space-y-2.5">
                 {filtered.filter((p) => p.predicted_change > 0).slice(0, 5).map((p) => (
                   <div key={`buy-${p.asset_id}`} className="flex justify-between items-center">
                     <span className="text-sm font-medium">{p.asset_name}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono text-emerald-400 font-semibold">+${p.predicted_change.toFixed(1)}M</span>
+                      <span className="text-xs font-mono font-semibold" style={{ color: "var(--neon-green)" }}>+${p.predicted_change.toFixed(1)}M</span>
                       <span className="text-[10px] font-mono text-gray-600">{(p.probability_increase * 100).toFixed(0)}%</span>
                     </div>
                   </div>
@@ -108,17 +108,17 @@ export default function BudgetBuilder() {
                 )}
               </div>
             </div>
-            <div className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid rgba(239,68,68,0.15)" }}>
+            <div className="glass-card rounded-2xl p-5 glow-red" style={{ borderColor: "rgba(225,6,0,0.15)" }}>
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-2 h-2 rounded-full bg-red-500" />
-                <h3 className="text-xs font-bold uppercase tracking-widest text-red-400">Sell Candidates</h3>
+                <div className="w-2 h-2 rounded-full" style={{ background: "var(--f1-red)" }} />
+                <h3 className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--f1-red)" }}>Sell Candidates</h3>
               </div>
               <div className="space-y-2.5">
                 {filtered.filter((p) => p.predicted_change < 0).sort((a, b) => a.predicted_change - b.predicted_change).slice(0, 5).map((p) => (
                   <div key={`sell-${p.asset_id}`} className="flex justify-between items-center">
                     <span className="text-sm font-medium">{p.asset_name}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono text-red-400 font-semibold">${p.predicted_change.toFixed(1)}M</span>
+                      <span className="text-xs font-mono font-semibold" style={{ color: "var(--f1-red)" }}>${p.predicted_change.toFixed(1)}M</span>
                       <span className="text-[10px] font-mono text-gray-600">{(p.probability_decrease * 100).toFixed(0)}%</span>
                     </div>
                   </div>
@@ -141,7 +141,7 @@ export default function BudgetBuilder() {
         </div>
       ) : filtered.length > 0 ? (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}
-          className="rounded-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          className="glass-card rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[640px]">
             <thead>
@@ -166,20 +166,20 @@ export default function BudgetBuilder() {
                   <td className="px-5 py-3 font-semibold text-sm">{p.asset_name}</td>
                   <td className="px-5 py-3 text-xs text-gray-600 capitalize">{p.asset_type}</td>
                   <td className="px-5 py-3 text-right font-mono text-sm">${p.current_price}M</td>
-                  <td className="px-5 py-3 text-right font-mono text-xs text-gray-400">{p.avg_ppm.toFixed(3)}</td>
-                  <td className={`px-5 py-3 text-right font-mono font-semibold text-sm ${
-                    p.predicted_change > 0 ? "text-emerald-400" : p.predicted_change < 0 ? "text-red-400" : "text-gray-500"
-                  }`}>
+                  <td className="px-5 py-3 text-right font-mono text-xs" style={{ color: "var(--neon-cyan)" }}>{p.avg_ppm.toFixed(3)}</td>
+                  <td className="px-5 py-3 text-right font-mono font-semibold text-sm"
+                    style={{ color: p.predicted_change > 0 ? "var(--neon-green)" : p.predicted_change < 0 ? "var(--f1-red)" : "#6b7280" }}
+                  >
                     {p.predicted_change > 0 ? "+" : ""}{p.predicted_change.toFixed(1)}M
                   </td>
                   <td className="px-5 py-3 text-center">{categoryBadge(p.change_category)}</td>
                   <td className="px-5 py-3 text-right">
-                    <span className="font-mono text-xs font-semibold text-emerald-400">
+                    <span className="font-mono text-xs font-semibold" style={{ color: "var(--neon-green)" }}>
                       {(p.probability_increase * 100).toFixed(0)}%
                     </span>
                   </td>
                   <td className="px-5 py-3 text-right">
-                    <span className="font-mono text-xs font-semibold text-red-400">
+                    <span className="font-mono text-xs font-semibold" style={{ color: "var(--f1-red)" }}>
                       {(p.probability_decrease * 100).toFixed(0)}%
                     </span>
                   </td>

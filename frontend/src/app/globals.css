@@ -1,15 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0a0f;
+  --background: #050508;
   --foreground: #e8e8ed;
   --f1-red: #e10600;
   --f1-red-dark: #b30500;
   --f1-red-glow: rgba(225, 6, 0, 0.3);
-  --card-bg: #12121a;
-  --card-border: #1e1e2e;
-  --card-hover: #1a1a28;
-  --surface: #15151f;
+  --neon-green: #00ff87;
+  --neon-purple: #9945ff;
+  --neon-cyan: #00d4ff;
+  --card-bg: rgba(16, 16, 24, 0.8);
+  --card-bg-solid: #10101a;
+  --card-border: rgba(255, 255, 255, 0.06);
+  --card-hover: rgba(26, 26, 40, 0.9);
+  --card-glow: rgba(225, 6, 0, 0.08);
+  --surface: #0c0c14;
+  --timing-green: #00ff87;
+  --timing-yellow: #ffd000;
+  --timing-purple: #b44aff;
 }
 
 @theme inline {
@@ -40,12 +48,32 @@ body {
   background: #3a3a4a;
 }
 
+/* Glass morphism card */
+.glass-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+}
+
 /* F1 Red accent glow */
 .glow-red {
   box-shadow: 0 0 20px var(--f1-red-glow), 0 0 60px rgba(225, 6, 0, 0.1);
 }
 
-/* Animated gradient border */
+/* Neon glows */
+.glow-green {
+  box-shadow: 0 0 12px rgba(0, 255, 135, 0.3), 0 0 40px rgba(0, 255, 135, 0.1);
+}
+.glow-purple {
+  box-shadow: 0 0 12px rgba(153, 69, 255, 0.3), 0 0 40px rgba(153, 69, 255, 0.1);
+}
+.glow-cyan {
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.3), 0 0 40px rgba(0, 212, 255, 0.1);
+}
+
+/* Animated gradient border (red -> purple -> cyan) */
 .gradient-border {
   position: relative;
   background: var(--card-bg);
@@ -63,28 +91,58 @@ body {
   pointer-events: none;
 }
 
-/* Shimmer loading animation */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+/* Neon animated border */
+.neon-border {
+  position: relative;
+  border-radius: 12px;
 }
-.shimmer {
-  background: linear-gradient(90deg, var(--card-bg) 25%, #1e1e30 50%, var(--card-bg) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-}
-
-/* Pulse glow for live indicator */
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 4px #22c55e; }
-  50% { box-shadow: 0 0 12px #22c55e, 0 0 24px rgba(34, 197, 94, 0.3); }
-}
-.pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
+.neon-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 13px;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--f1-red), var(--neon-purple), var(--neon-cyan));
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.6;
 }
 
-/* Racing stripe accent */
+/* Carbon fiber texture */
+.carbon-texture {
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 1px,
+      rgba(255, 255, 255, 0.015) 1px,
+      rgba(255, 255, 255, 0.015) 2px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 1px,
+      rgba(255, 255, 255, 0.015) 1px,
+      rgba(255, 255, 255, 0.015) 2px
+    );
+}
+
+/* Data grid / telemetry dot pattern */
+.data-grid {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Racing stripe divider */
 .racing-stripe {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--f1-red), var(--neon-purple), transparent);
+  opacity: 0.4;
+}
+
+/* Racing stripe texture (diagonal) */
+.racing-stripe-texture {
   background: repeating-linear-gradient(
     -45deg,
     transparent,
@@ -94,8 +152,52 @@ body {
   );
 }
 
+/* Shimmer loading animation */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, var(--card-bg-solid) 25%, #1a1a2e 50%, var(--card-bg-solid) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Pulse glow for live indicator */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 4px var(--neon-green); }
+  50% { box-shadow: 0 0 12px var(--neon-green), 0 0 24px rgba(0, 255, 135, 0.3); }
+}
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 4px var(--f1-red); }
+  50% { box-shadow: 0 0 12px var(--f1-red), 0 0 24px var(--f1-red-glow); }
+}
+.pulse-red {
+  animation: pulse-red 2s ease-in-out infinite;
+}
+
 /* Number display */
 .driver-number {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
+
+/* Position badges */
+.pos-badge-1 { background: linear-gradient(135deg, #ffd700, #b8860b); color: #000; }
+.pos-badge-2 { background: linear-gradient(135deg, #c0c0c0, #808080); color: #000; }
+.pos-badge-3 { background: linear-gradient(135deg, #cd7f32, #8b4513); color: #fff; }
+
+/* Tier glow badges */
+.tier-safe { border-color: var(--neon-green); box-shadow: 0 0 8px rgba(0, 255, 135, 0.2); }
+.tier-upside { border-color: var(--neon-purple); box-shadow: 0 0 8px rgba(153, 69, 255, 0.2); }
+.tier-neutral { border-color: var(--timing-yellow); box-shadow: 0 0 8px rgba(255, 208, 0, 0.2); }
+.tier-avoid { border-color: var(--f1-red); box-shadow: 0 0 8px rgba(225, 6, 0, 0.2); }
+
+/* Status badges */
+.status-auto { background: rgba(0, 255, 135, 0.15); color: var(--neon-green); border: 1px solid rgba(0, 255, 135, 0.3); }
+.status-pending { background: rgba(255, 208, 0, 0.15); color: var(--timing-yellow); border: 1px solid rgba(255, 208, 0, 0.3); }
+.status-manual { background: rgba(0, 212, 255, 0.15); color: var(--neon-cyan); border: 1px solid rgba(0, 212, 255, 0.3); }

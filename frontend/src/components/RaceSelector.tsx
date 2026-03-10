@@ -21,10 +21,8 @@ export default function RaceSelector({
           const val = e.target.value;
           onSelect(val ? Number(val) : null);
         }}
-        className="appearance-none w-full sm:w-auto text-sm font-medium pl-4 pr-8 py-3 sm:py-2.5 rounded-xl focus:outline-none focus:ring-1 transition-colors cursor-pointer"
+        className="appearance-none w-full sm:w-auto text-sm font-medium pl-4 pr-8 py-3 sm:py-2.5 rounded-xl focus:outline-none focus:ring-1 transition-colors cursor-pointer glass-card"
         style={{
-          background: "var(--card-bg)",
-          border: "1px solid var(--card-border)",
           color: selectedRaceId ? "var(--foreground)" : "#6b7280",
         }}
       >
