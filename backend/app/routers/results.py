@@ -201,9 +201,12 @@ async def auto_ingest_race(race_id: int, db: Session = Depends(get_db)):
     # Try to fetch from FastF1
     try:
         from app.services.practice_data import fetch_race_results
+        from app.models import Driver as DriverModel
         year = int(race.date[:4]) if race.date else 2026
         meeting_name = race.name.replace(" Grand Prix", "")
-        fetched = await asyncio.to_thread(fetch_race_results, year, meeting_name, db)
+        # Build driver_map on main thread to avoid SQLite thread-safety issues
+        _driver_map = {d.code: d.id for d in db.query(DriverModel).all()}
+        fetched = await asyncio.to_thread(fetch_race_results, year, meeting_name, driver_map=_driver_map)
 
         if fetched is None:
             return {"status": "unavailable", "message": "Results not yet available from FastF1"}

@@ -250,7 +250,7 @@ def simulate_race_weekend(
             if len(d_indices) < 2:
                 continue
 
-            d0, d1 = d_indices[0], d_indices[1]
+            d0, d1 = d_indices[0], d_indices[1]  # Score first 2 drivers only
             q0 = int(quali_positions[d0])
             q1 = int(quali_positions[d1])
 

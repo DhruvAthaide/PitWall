@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import init_db, seed_db, SessionLocal
-from app.routers import drivers, constructors, races, simulation, budget, statistics, fixtures, chips, penalties, transfers, league, drs, results, season, whatif, compare
+from app.routers import drivers, constructors, races, simulation, budget, statistics, fixtures, chips, penalties, transfers, league, drs, results, season, whatif, compare, telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ app.include_router(results.router)
 app.include_router(season.router)
 app.include_router(whatif.router)
 app.include_router(compare.router)
+app.include_router(telemetry.router)
 
 
 @app.on_event("startup")

@@ -81,7 +81,7 @@ def _circuit_difficulty_for_constructor(strength: float, circuit: Circuit) -> fl
 
 @router.get("/difficulty", response_model=list[FixtureDifficultyRow])
 def get_fixture_difficulty(
-    asset_type: str = Query("driver", regex="^(driver|constructor)$"),
+    asset_type: str = Query("driver", pattern="^(driver|constructor)$"),
     db: Session = Depends(get_db),
 ):
     races = db.query(Race).order_by(Race.round).all()

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Driver, Constructor, Race, FantasyScore, PitstopResult
 from app.schemas import ScoreBreakdown, PitstopResultCreate, PitstopResultResponse, PitstopSummary
+from app.simulation.scoring import score_pitstop_time, FASTEST_PITSTOP_BONUS
 
 router = APIRouter(prefix="/api/statistics", tags=["statistics"])
 
@@ -116,14 +117,16 @@ def get_all_stats(race_id: int | None = None, db: Session = Depends(get_db)):
 
 @router.post("/pitstops", response_model=PitstopResultResponse)
 def add_pitstop(data: PitstopResultCreate, db: Session = Depends(get_db)):
-    # Calculate points: fastest pit = 10pts, 2nd = 5pts, 3rd = 3pts in F1 Fantasy
+    # Calculate points based on pitstop time + fastest bonus
+    base_pts = score_pitstop_time(data.time_seconds)
+    bonus = FASTEST_PITSTOP_BONUS if data.is_fastest else 0
     pitstop = PitstopResult(
         constructor_id=data.constructor_id,
         race_id=data.race_id,
         stop_number=data.stop_number,
         time_seconds=data.time_seconds,
         is_fastest=data.is_fastest,
-        points_scored=10.0 if data.is_fastest else 0.0,
+        points_scored=base_pts + bonus,
     )
     db.add(pitstop)
     db.commit()

@@ -136,7 +136,8 @@ def increment_pu_component(
 ):
     """Increment a driver's component usage by 1 (e.g., new ICE used)."""
     if component_type not in COMPONENT_LIMITS:
-        return {"error": f"Invalid component type: {component_type}"}
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Invalid component type: {component_type}")
 
     _ensure_pu_initialized(db)
 

@@ -333,3 +333,81 @@ export interface CompareConstructorResult {
   expected_pts: number;
   price: number;
 }
+
+// Telemetry types
+export interface LapTimePoint {
+  lap_number: number;
+  time_seconds: number;
+  compound: string;
+  stint: number;
+  is_personal_best: boolean;
+}
+
+export interface SectorTimePoint {
+  lap_number: number;
+  s1: number | null;
+  s2: number | null;
+  s3: number | null;
+  compound: string;
+}
+
+export interface SpeedTracePoint {
+  distance: number;
+  speed: number;
+}
+
+export interface TireStint {
+  stint_number: number;
+  compound: string;
+  color: string;
+  start_lap: number;
+  end_lap: number;
+  laps: number;
+}
+
+export interface PositionPoint {
+  lap_number: number;
+  position: number;
+}
+
+export interface TelemetryPoint {
+  distance: number;
+  speed: number;
+  throttle: number;
+  brake: number;
+  drs: number;
+  gear: number;
+}
+
+export interface SpeedTrap {
+  trap_name: string;
+  speed: number;
+}
+
+export interface LapDistribution {
+  median: number;
+  q1: number;
+  q3: number;
+  whisker_low: number;
+  whisker_high: number;
+  outliers: number[];
+  count: number;
+}
+
+export interface StintDegradation {
+  stint: number;
+  compound: string;
+  color: string;
+  laps: { lap_number: number; time_seconds: number }[];
+  degradation_per_lap: number;
+}
+
+export interface GearDistribution {
+  gear: number;
+  percentage: number;
+}
+
+export interface GapPoint {
+  distance: number;
+  delta_seconds: number;
+}

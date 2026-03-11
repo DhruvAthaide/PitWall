@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import math
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session
 from datetime import datetime
 
@@ -261,7 +261,7 @@ async def run_simulation(
     race_id: int,
     use_practice_data: bool = True,
     n_simulations: int = 50000,
-    grid_penalties: dict[int, int] | None = None,
+    grid_penalties: dict[int, int] | None = Body(default=None),
     db: Session = Depends(get_db),
 ):
     """Run simulation (force mode). Thin wrapper around auto_sim."""

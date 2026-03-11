@@ -39,6 +39,16 @@ import type {
   StrategyBrief,
   CompareDriverResult,
   CompareConstructorResult,
+  LapTimePoint,
+  SectorTimePoint,
+  SpeedTracePoint,
+  TireStint,
+  PositionPoint,
+  TelemetryPoint,
+  SpeedTrap,
+  LapDistribution,
+  StintDegradation,
+  GearDistribution,
 } from "@/types";
 
 export const api = {
@@ -190,4 +200,49 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  // Telemetry endpoints
+  getTelemetryAvailableSessions: (year: number, event: string) =>
+    fetchApi<string[]>(`/api/telemetry/available-sessions?year=${year}&event=${encodeURIComponent(event)}`),
+
+  getTelemetryLaps: (year: number, event: string, session: string, driver: string) =>
+    fetchApi<LapTimePoint[]>(`/api/telemetry/laps?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+
+  getTelemetrySectors: (year: number, event: string, session: string, driver: string) =>
+    fetchApi<SectorTimePoint[]>(`/api/telemetry/sectors?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+
+  getTelemetrySpeedTrace: (year: number, event: string, session: string, driver: string, lap?: number) =>
+    fetchApi<{ points: SpeedTracePoint[]; lap_number: number | null; lap_time: number | null }>(
+      `/api/telemetry/speed-trace?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}${lap ? `&lap=${lap}` : ''}`
+    ),
+
+  getTelemetryTireStrategy: (year: number, event: string, session: string, driver: string) =>
+    fetchApi<TireStint[]>(`/api/telemetry/tire-strategy?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+
+  getTelemetryPositions: (year: number, event: string, session: string, driver: string) =>
+    fetchApi<PositionPoint[]>(`/api/telemetry/positions?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+
+  getTelemetryDrivingData: (year: number, event: string, session: string, driver: string, lap?: number) =>
+    fetchApi<{ points: TelemetryPoint[]; lap_number: number | null }>(
+      `/api/telemetry/driving-data?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}${lap ? `&lap=${lap}` : ''}`
+    ),
+
+  getTelemetrySpeedTraps: (year: number, event: string, session: string, driver: string) =>
+    fetchApi<SpeedTrap[]>(`/api/telemetry/speed-traps?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+
+  getTelemetryDistribution: (year: number, event: string, session: string, driver: string) =>
+    fetchApi<LapDistribution | null>(`/api/telemetry/distribution?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+
+  getTelemetryDegradation: (year: number, event: string, session: string, driver: string) =>
+    fetchApi<StintDegradation[]>(`/api/telemetry/degradation?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+
+  getTelemetryGear: (year: number, event: string, session: string, driver: string, lap?: number) =>
+    fetchApi<GearDistribution[]>(
+      `/api/telemetry/gear?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}${lap ? `&lap=${lap}` : ''}`
+    ),
+
+  getTelemetryCompare: (year: number, event: string, session: string, drivers: string[], type: string) =>
+    fetchApi<Record<string, unknown>>(
+      `/api/telemetry/compare?year=${year}&event=${encodeURIComponent(event)}&session=${session}&drivers=${drivers.join(',')}&type=${type}`
+    ),
 };

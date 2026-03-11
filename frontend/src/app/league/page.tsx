@@ -63,16 +63,16 @@ export default function LeaguePage() {
   const toggleRivalDriver = (id: number) => {
     setRivalDrivers((prev) => {
       if (prev.includes(id)) {
-        return prev.filter((x) => x !== id);
+        const next = prev.filter((x) => x !== id);
+        // Auto-correct DRS if the removed driver was the DRS pick
+        if (rivalDrs === id) {
+          setRivalDrs(next[0] || null);
+        }
+        return next;
       }
       if (prev.length >= 5) return prev;
       return [...prev, id];
     });
-    // Handle DRS separately
-    if (rivalDrivers.includes(id) && rivalDrs === id) {
-      const remaining = rivalDrivers.filter((x) => x !== id);
-      setRivalDrs(remaining[0] || null);
-    }
   };
 
   const toggleRivalConstructor = (id: number) => {

@@ -373,11 +373,14 @@ def calculate_dynamic_params(
     return results
 
 
-def fetch_race_results(year: int, event_name: str, db=None) -> list[dict] | None:
+def fetch_race_results(year: int, event_name: str, db=None, driver_map: dict | None = None) -> list[dict] | None:
     """Fetch race results from FastF1 and map to driver_ids.
 
     Returns list of dicts matching DriverResultInput schema, or None if unavailable.
     Handles edge cases: DNS, lapped drivers, DSQ, reserve drivers.
+
+    Pass ``driver_map`` (code->id) when calling from a background thread
+    so the function doesn't need a DB session (SQLite is not thread-safe).
     """
     try:
         with warnings.catch_warnings():
@@ -395,12 +398,13 @@ def fetch_race_results(year: int, event_name: str, db=None) -> list[dict] | None
             logger.info(f"No race results available for {full_event} {year}")
             return None
 
-        # Build driver code -> driver_id mapping from DB
-        driver_map = {}
-        if db:
-            from app.models import Driver
-            for driver in db.query(Driver).all():
-                driver_map[driver.code] = driver.id
+        # Build driver code -> driver_id mapping from DB (only if not pre-supplied)
+        if driver_map is None:
+            driver_map = {}
+            if db:
+                from app.models import Driver
+                for driver in db.query(Driver).all():
+                    driver_map[driver.code] = driver.id
 
         parsed = []
         for _, row in results_df.iterrows():

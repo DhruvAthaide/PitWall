@@ -77,10 +77,10 @@ export default function TeamCalculator() {
           race_id: data.race_id,
           race_name: data.race_name,
           n_simulations: 50000,
-          data_sources: [],
-          has_qualifying: false,
-          has_long_runs: false,
-          weather: null,
+          data_sources: data.data_sources || [],
+          has_qualifying: data.has_qualifying || false,
+          has_long_runs: data.has_long_runs || false,
+          weather: data.weather || null,
           simulated_at: data.simulated_at || "",
         });
         // Refresh drivers/constructors with expected_pts
@@ -147,6 +147,8 @@ export default function TeamCalculator() {
       ]).then(([ud, uc, pp]) => {
         setDrivers(ud); setConstructors(uc); setPricePredictions(pp);
       }).catch(() => {});
+    } catch {
+      // Simulation failed — keep any existing results visible
     } finally { setSimulating(false); }
   }, [selectedRaceId, nSimulations]);
 

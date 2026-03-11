@@ -473,7 +473,10 @@ async def auto_ingest_results(db: Session) -> list[dict]:
         try:
             year = int(race.date[:4]) if race.date else 2026
             meeting_name = race.name.replace(" Grand Prix", "")
-            ingested = await asyncio.to_thread(fetch_race_results, year, meeting_name, db)
+            # Build driver_map on the main thread to avoid SQLite thread-safety issues
+            from app.models import Driver as DriverModel
+            _driver_map = {d.code: d.id for d in db.query(DriverModel).all()}
+            ingested = await asyncio.to_thread(fetch_race_results, year, meeting_name, driver_map=_driver_map)
 
             if ingested is None:
                 ingestion_log.append({

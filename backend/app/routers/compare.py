@@ -29,7 +29,7 @@ def _form_trend(driver_id: int, db: Session) -> str:
     if len(results) < 2:
         return "stable"
 
-    positions = [r.race_position for r in results if not r.dnf]
+    positions = [r.race_position for r in results if not r.dnf and r.race_position is not None]
     if len(positions) < 2:
         return "stable"
 
