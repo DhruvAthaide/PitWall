@@ -1,7 +1,7 @@
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "");
-
+// In production, Next.js rewrites proxy /api/* to the backend.
+// In dev, the rewrite also handles it (BACKEND_URL in next.config.ts).
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(path, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -49,6 +49,7 @@ import type {
   LapDistribution,
   StintDegradation,
   GearDistribution,
+  GapPoint,
 } from "@/types";
 
 export const api = {
@@ -202,47 +203,69 @@ export const api = {
     }),
 
   // Telemetry endpoints
-  getTelemetryAvailableSessions: (year: number, event: string) =>
-    fetchApi<string[]>(`/api/telemetry/available-sessions?year=${year}&event=${encodeURIComponent(event)}`),
+  getTelemetryAvailableSessions: async (year: number, event: string) => {
+    const res = await fetchApi<{ sessions: string[] }>(`/api/telemetry/available-sessions?year=${year}&event=${encodeURIComponent(event)}`);
+    return res.sessions ?? [];
+  },
 
-  getTelemetryLaps: (year: number, event: string, session: string, driver: string) =>
-    fetchApi<LapTimePoint[]>(`/api/telemetry/laps?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+  getTelemetryLaps: async (year: number, event: string, session: string, driver: string) => {
+    const res = await fetchApi<{ driver: string; laps: LapTimePoint[] }>(`/api/telemetry/laps?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`);
+    return res.laps ?? [];
+  },
 
-  getTelemetrySectors: (year: number, event: string, session: string, driver: string) =>
-    fetchApi<SectorTimePoint[]>(`/api/telemetry/sectors?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+  getTelemetrySectors: async (year: number, event: string, session: string, driver: string) => {
+    const res = await fetchApi<{ driver: string; sectors: SectorTimePoint[] }>(`/api/telemetry/sectors?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`);
+    return res.sectors ?? [];
+  },
 
-  getTelemetrySpeedTrace: (year: number, event: string, session: string, driver: string, lap?: number) =>
-    fetchApi<{ points: SpeedTracePoint[]; lap_number: number | null; lap_time: number | null }>(
+  getTelemetrySpeedTrace: async (year: number, event: string, session: string, driver: string, lap?: number) => {
+    const res = await fetchApi<{ driver: string; points: SpeedTracePoint[]; lap_number: number | null; lap_time: number | null }>(
       `/api/telemetry/speed-trace?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}${lap ? `&lap=${lap}` : ''}`
-    ),
+    );
+    return { points: res.points ?? [], lap_number: res.lap_number, lap_time: res.lap_time };
+  },
 
-  getTelemetryTireStrategy: (year: number, event: string, session: string, driver: string) =>
-    fetchApi<TireStint[]>(`/api/telemetry/tire-strategy?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+  getTelemetryTireStrategy: async (year: number, event: string, session: string, driver: string) => {
+    const res = await fetchApi<{ driver: string; stints: TireStint[] }>(`/api/telemetry/tire-strategy?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`);
+    return res.stints ?? [];
+  },
 
-  getTelemetryPositions: (year: number, event: string, session: string, driver: string) =>
-    fetchApi<PositionPoint[]>(`/api/telemetry/positions?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+  getTelemetryPositions: async (year: number, event: string, session: string, driver: string) => {
+    const res = await fetchApi<{ driver: string; positions: PositionPoint[] }>(`/api/telemetry/positions?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`);
+    return res.positions ?? [];
+  },
 
-  getTelemetryDrivingData: (year: number, event: string, session: string, driver: string, lap?: number) =>
-    fetchApi<{ points: TelemetryPoint[]; lap_number: number | null }>(
+  getTelemetryDrivingData: async (year: number, event: string, session: string, driver: string, lap?: number) => {
+    const res = await fetchApi<{ driver: string; points: TelemetryPoint[]; lap_number: number | null }>(
       `/api/telemetry/driving-data?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}${lap ? `&lap=${lap}` : ''}`
-    ),
+    );
+    return { points: res.points ?? [], lap_number: res.lap_number };
+  },
 
-  getTelemetrySpeedTraps: (year: number, event: string, session: string, driver: string) =>
-    fetchApi<SpeedTrap[]>(`/api/telemetry/speed-traps?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+  getTelemetrySpeedTraps: async (year: number, event: string, session: string, driver: string) => {
+    const res = await fetchApi<{ driver: string; traps: SpeedTrap[] }>(`/api/telemetry/speed-traps?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`);
+    return res.traps ?? [];
+  },
 
-  getTelemetryDistribution: (year: number, event: string, session: string, driver: string) =>
-    fetchApi<LapDistribution | null>(`/api/telemetry/distribution?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+  getTelemetryDistribution: async (year: number, event: string, session: string, driver: string) => {
+    const res = await fetchApi<{ driver: string; distribution: LapDistribution | null }>(`/api/telemetry/distribution?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`);
+    return res.distribution ?? null;
+  },
 
-  getTelemetryDegradation: (year: number, event: string, session: string, driver: string) =>
-    fetchApi<StintDegradation[]>(`/api/telemetry/degradation?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`),
+  getTelemetryDegradation: async (year: number, event: string, session: string, driver: string) => {
+    const res = await fetchApi<{ driver: string; stints: StintDegradation[] }>(`/api/telemetry/degradation?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}`);
+    return res.stints ?? [];
+  },
 
-  getTelemetryGear: (year: number, event: string, session: string, driver: string, lap?: number) =>
-    fetchApi<GearDistribution[]>(
+  getTelemetryGear: async (year: number, event: string, session: string, driver: string, lap?: number) => {
+    const res = await fetchApi<{ driver: string; gears: GearDistribution[] }>(
       `/api/telemetry/gear?year=${year}&event=${encodeURIComponent(event)}&session=${session}&driver=${driver}${lap ? `&lap=${lap}` : ''}`
-    ),
+    );
+    return res.gears ?? [];
+  },
 
   getTelemetryCompare: (year: number, event: string, session: string, drivers: string[], type: string) =>
-    fetchApi<Record<string, unknown>>(
+    fetchApi<{ type: string; points?: GapPoint[]; drivers?: Record<string, unknown> }>(
       `/api/telemetry/compare?year=${year}&event=${encodeURIComponent(event)}&session=${session}&drivers=${drivers.join(',')}&type=${type}`
     ),
 };

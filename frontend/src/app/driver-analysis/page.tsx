@@ -684,8 +684,8 @@ function CompareTab({
     const tl2 = get(11, { points: [] as TelemetryPoint[] });
     setTel1((tl1 as { points: TelemetryPoint[] }).points || []);
     setTel2((tl2 as { points: TelemetryPoint[] }).points || []);
-    const gapData = get(12, { points: [] as GapPoint[] }) as { points: GapPoint[] };
-    setGap(gapData.points || []);
+    const gapData = get(12, { points: [] as GapPoint[] }) as { points?: GapPoint[] };
+    setGap(gapData.points ?? []);
     setSpeedTraps1(get(13, []));
     setSpeedTraps2(get(14, []));
 
