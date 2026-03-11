@@ -7,17 +7,25 @@ and weather data. FastF1 works during live sessions (unlike OpenF1 API).
 """
 
 import logging
+import os
 import warnings
 import numpy as np
-import fastf1
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
-import os
 CACHE_DIR = os.environ.get("FASTF1_CACHE", os.path.join(os.path.dirname(__file__), "..", "..", ".fastf1_cache"))
 os.makedirs(CACHE_DIR, exist_ok=True)
-fastf1.Cache.enable_cache(CACHE_DIR)
+
+_fastf1 = None
+
+def _get_fastf1():
+    global _fastf1
+    if _fastf1 is None:
+        import fastf1
+        fastf1.Cache.enable_cache(CACHE_DIR)
+        _fastf1 = fastf1
+    return _fastf1
 
 # Qualifying dominates when available
 WEIGHTS = {
@@ -74,7 +82,7 @@ def _process_fastf1_session(session_name: str, year: int, event_name: str) -> li
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            session = fastf1.get_session(year, event_name, session_name)
+            session = _get_fastf1().get_session(year, event_name, session_name)
             session.load(telemetry=False, weather=False, messages=False)
 
         laps = session.laps
@@ -139,7 +147,7 @@ def _extract_long_runs(year: int, event_name: str) -> dict[str, LongRunData]:
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            session = fastf1.get_session(year, event_name, "FP2")
+            session = _get_fastf1().get_session(year, event_name, "FP2")
             session.load(telemetry=False, weather=False, messages=False)
 
         laps = session.laps
@@ -189,7 +197,7 @@ def _fetch_weather(year: int, event_name: str, session_name: str = "FP3") -> Wea
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            session = fastf1.get_session(year, event_name, session_name)
+            session = _get_fastf1().get_session(year, event_name, session_name)
             session.load(telemetry=False, laps=False, messages=False)
 
         weather = session.weather_data
@@ -390,7 +398,7 @@ def fetch_race_results(year: int, event_name: str, db=None, driver_map: dict | N
             if "Grand Prix" not in full_event:
                 full_event = f"{event_name} Grand Prix"
 
-            session = fastf1.get_session(year, full_event, "R")
+            session = _get_fastf1().get_session(year, full_event, "R")
             session.load(telemetry=False, weather=False, messages=False, laps=False)
 
         results_df = session.results

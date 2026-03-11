@@ -11,16 +11,23 @@ import warnings
 from functools import lru_cache
 from typing import Any
 
+import os
 import numpy as np
-import fastf1
 
 logger = logging.getLogger(__name__)
 
-# Reuse cache from practice_data
-import os
 CACHE_DIR = os.environ.get("FASTF1_CACHE", os.path.join(os.path.dirname(__file__), "..", "..", ".fastf1_cache"))
 os.makedirs(CACHE_DIR, exist_ok=True)
-fastf1.Cache.enable_cache(CACHE_DIR)
+
+_fastf1 = None
+
+def _get_fastf1():
+    global _fastf1
+    if _fastf1 is None:
+        import fastf1
+        fastf1.Cache.enable_cache(CACHE_DIR)
+        _fastf1 = fastf1
+    return _fastf1
 
 DOWNSAMPLE_POINTS = 200
 
@@ -42,7 +49,7 @@ def _load_session_key(year: int, event: str, session_type: str) -> Any:
         full_event = event
         if "Grand Prix" not in full_event:
             full_event = f"{event} Grand Prix"
-        session = fastf1.get_session(year, full_event, session_type)
+        session = _get_fastf1().get_session(year, full_event, session_type)
         session.load(telemetry=True, weather=True, messages=False)
     return session
 
@@ -68,7 +75,7 @@ def get_available_sessions(year: int, event: str) -> list[str]:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 full_event = event if "Grand Prix" in event else f"{event} Grand Prix"
-                s = fastf1.get_session(year, full_event, sess)
+                s = _get_fastf1().get_session(year, full_event, sess)
                 s.load(telemetry=False, weather=False, messages=False, laps=True)
                 if s.laps is not None and not s.laps.empty:
                     available.append(sess)
