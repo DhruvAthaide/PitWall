@@ -20,6 +20,13 @@ interface StintDegradationChartProps {
 
 export default function StintDegradationChart({ data, loading = false }: StintDegradationChartProps) {
   if (loading) return <ChartSkeleton />;
+  if (data.length === 0) {
+    return (
+      <div className="w-full h-64 flex items-center justify-center text-gray-500 text-sm">
+        No stint degradation data available
+      </div>
+    );
+  }
 
   // Build merged data: each row has lap_number + a column per stint
   const allLaps: Record<number, Record<string, number>> = {};

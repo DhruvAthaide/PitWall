@@ -39,6 +39,13 @@ export default function SpeedTraceChart({
   loading = false,
 }: SpeedTraceChartProps) {
   if (loading) return <ChartSkeleton />;
+  if (data.length === 0 && (!data2 || data2.length === 0)) {
+    return (
+      <div className="w-full h-64 flex items-center justify-center text-gray-500 text-sm">
+        No speed trace data available
+      </div>
+    );
+  }
 
   let merged: MergedPoint[];
 

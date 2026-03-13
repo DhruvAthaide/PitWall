@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 
 interface InfoTooltipProps {
   text: string;
@@ -9,15 +10,44 @@ interface InfoTooltipProps {
 
 export default function InfoTooltip({ text, children }: InfoTooltipProps) {
   const [show, setShow] = useState(false);
-  const [position, setPosition] = useState<"top" | "bottom">("top");
+  const [coords, setCoords] = useState({ top: 0, left: 0, above: true });
   const triggerRef = useRef<HTMLSpanElement>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (show && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
-      setPosition(rect.top < 100 ? "bottom" : "top");
+      const above = rect.top > 120;
+      setCoords({
+        top: above ? rect.top - 6 : rect.bottom + 6,
+        left: rect.left + rect.width / 2,
+        above,
+      });
     }
   }, [show]);
+
+  const tooltip = show && mounted
+    ? createPortal(
+        <span
+          className="fixed z-[9999] px-3 py-2 rounded-lg text-[11px] leading-relaxed font-normal whitespace-normal w-56 pointer-events-none"
+          style={{
+            background: "rgba(16, 16, 24, 0.95)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            backdropFilter: "blur(12px)",
+            color: "rgba(255,255,255,0.8)",
+            top: coords.above ? undefined : coords.top,
+            bottom: coords.above ? `calc(100vh - ${coords.top}px)` : undefined,
+            left: coords.left,
+            transform: "translateX(-50%)",
+          }}
+        >
+          {text}
+        </span>,
+        document.body
+      )
+    : null;
 
   return (
     <span
@@ -33,22 +63,7 @@ export default function InfoTooltip({ text, children }: InfoTooltipProps) {
           <text x="8" y="12" textAnchor="middle" fill="currentColor" fontSize="10" fontWeight="bold">?</text>
         </svg>
       )}
-      {show && (
-        <span
-          className="absolute z-50 px-3 py-2 rounded-lg text-[11px] leading-relaxed font-normal whitespace-normal w-56 pointer-events-none"
-          style={{
-            background: "rgba(16, 16, 24, 0.95)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            backdropFilter: "blur(12px)",
-            color: "rgba(255,255,255,0.8)",
-            ...(position === "top"
-              ? { bottom: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)" }
-              : { top: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)" }),
-          }}
-        >
-          {text}
-        </span>
-      )}
+      {tooltip}
     </span>
   );
 }

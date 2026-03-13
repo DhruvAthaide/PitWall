@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import math
 from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -8,252 +7,16 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 from app.database import get_db
-from app.models import Driver, Constructor, Race, Circuit, FantasyPrice, SimulationResult, RaceResult
+from app.models import Driver, Constructor, Race, Circuit, FantasyPrice, SimulationResult
 from app.schemas import SimulationResultResponse, BestTeamRequest, TeamResult, DriverResponse, ConstructorResponse, SimulationMeta, MyTeamRequest, TeamComparisonResponse
-from app.simulation.engine import DriverParams, ConstructorParams, CircuitTraits, WeatherConfig, simulate_race_weekend
+from app.simulation.engine import CircuitTraits, simulate_race_weekend
 from app.simulation.optimizer import find_best_teams, Asset
-from app.simulation.parameters import DRIVER_DEFAULTS, CONSTRUCTOR_PITSTOP_DEFAULTS, CONSTRUCTOR_CAR_PACE_STD, get_dynamic_car_pace_std
-from app.services.practice_data import fetch_practice_data, fetch_session_metadata, calculate_dynamic_params
+from app.services.auto_sim import (
+    _build_driver_params, _build_constructor_params,
+    _compute_history_adjustments,
+)
 
 router = APIRouter(prefix="/api", tags=["simulation"])
-
-
-def _circuit_similarity(c1: Circuit, c2: Circuit) -> float:
-    """Compute similarity between two circuits using Euclidean distance on normalized traits.
-    Returns a value between 0.5 and 1.5 — identical circuits get 1.5, maximally
-    different get 0.5. Never zeroes out a result, just scales it."""
-    traits1 = [
-        c1.overtake_difficulty or 0.5,
-        c1.high_speed or 0.5,
-        float(c1.street_circuit or False),
-        c1.avg_degradation or 0.5,
-    ]
-    traits2 = [
-        c2.overtake_difficulty or 0.5,
-        c2.high_speed or 0.5,
-        float(c2.street_circuit or False),
-        c2.avg_degradation or 0.5,
-    ]
-    dist = math.sqrt(sum((a - b) ** 2 for a, b in zip(traits1, traits2)))
-    # Max possible distance: sqrt(4) = 2.0; normalize to 0-1, then map to 0.5-1.5
-    return 1.5 - (dist / 2.0)
-
-
-def _compute_history_adjustments(
-    db: Session,
-    race: Race,
-    target_circuit: Circuit | None = None,
-) -> dict[int, dict]:
-    """Compute adjusted driver parameters from previous race results this season.
-
-    Uses exponential recency weighting so recent races influence predictions
-    far more than early-season results. When target_circuit is provided, also
-    weights by circuit similarity (similar tracks contribute more).
-
-    Returns empty dict for Round 1 (no prior data).
-    """
-    if race.round <= 1:
-        return {}
-
-    DECAY_FACTOR = 0.85  # per-round decay; lower = older results fade faster
-
-    # Find all races with lower round numbers in the same season
-    year = race.date[:4] if race.date and len(race.date) >= 4 else "2026"
-    prior_races = (
-        db.query(Race)
-        .filter(Race.round < race.round, Race.date.isnot(None), Race.date.like(f"{year}%"))
-        .all()
-    )
-    if not prior_races:
-        return {}
-
-    # Build round-number lookup and circuit lookup for each race_id
-    race_round_map = {r.id: r.round for r in prior_races}
-    prior_race_ids = list(race_round_map.keys())
-
-    # [A4] Pre-compute circuit similarity for each prior race
-    race_circuit_similarity: dict[int, float] = {}
-    if target_circuit:
-        for r in prior_races:
-            prior_circuit = db.get(Circuit, r.circuit_id) if r.circuit_id else None
-            if prior_circuit:
-                race_circuit_similarity[r.id] = _circuit_similarity(target_circuit, prior_circuit)
-            else:
-                race_circuit_similarity[r.id] = 1.0  # neutral if no circuit data
-
-    # Get all results from prior races
-    prior_results = (
-        db.query(RaceResult)
-        .filter(RaceResult.race_id.in_(prior_race_ids))
-        .all()
-    )
-    if not prior_results:
-        return {}
-
-    # Aggregate per driver with recency weights
-    driver_stats: dict[int, dict] = {}
-    for r in prior_results:
-        if r.driver_id not in driver_stats:
-            driver_stats[r.driver_id] = {
-                "weighted_quali": 0.0,
-                "weighted_race": 0.0,
-                "weighted_pos_gained": 0.0,
-                "total_weight": 0.0,
-                "race_finish_weight": 0.0,
-                "dnf_weighted": 0.0,
-                "fl_weighted": 0.0,
-                "total_races": 0,
-            }
-
-        rounds_ago = race.round - race_round_map[r.race_id]
-        weight = DECAY_FACTOR ** rounds_ago
-
-        # [A4] Scale weight by circuit similarity
-        if target_circuit and r.race_id in race_circuit_similarity:
-            weight *= race_circuit_similarity[r.race_id]
-
-        s = driver_stats[r.driver_id]
-        s["total_races"] += 1
-        s["total_weight"] += weight
-        s["weighted_quali"] += (r.qualifying_position or 22) * weight
-
-        if r.dnf:
-            s["dnf_weighted"] += weight
-        else:
-            s["weighted_race"] += (r.race_position or 22) * weight
-            s["race_finish_weight"] += weight
-            s["weighted_pos_gained"] += ((r.qualifying_position or 22) - (r.race_position or 22)) * weight
-
-        if r.fastest_lap:
-            s["fl_weighted"] += weight
-
-    # Convert to adjusted params
-    adjustments = {}
-    for driver_id, s in driver_stats.items():
-        n = s["total_races"]
-        tw = s["total_weight"]
-
-        # Weighted average qualifying position
-        avg_quali = s["weighted_quali"] / tw if tw > 0 else 11.5
-        qpace_mean = avg_quali
-
-        # Confidence narrows with more data (effective sample size from weights)
-        # Use sum of weights as effective N — decayed old races count less
-        effective_n = tw
-        qpace_std = max(1.5, 4.0 / (1 + effective_n * 0.3))
-
-        # DNF probability: weighted ratio with Bayesian smoothing toward 6%
-        prior_weight = 1.5  # virtual prior weight
-        dnf_pct = (s["dnf_weighted"] + prior_weight * 0.06) / (tw + prior_weight)
-
-        # Fastest lap probability: weighted with smoothing toward 1/22
-        base_fl = 1 / 22
-        fl_pct = (s["fl_weighted"] + prior_weight * base_fl) / (tw + prior_weight)
-
-        # Weighted average positions gained (only from non-DNF races)
-        rfw = s["race_finish_weight"]
-        if rfw > 0:
-            avg_pos_gained = s["weighted_pos_gained"] / rfw
-        else:
-            avg_pos_gained = 0.0
-
-        adjustments[driver_id] = {
-            "qpace_mean": round(qpace_mean, 2),
-            "qpace_std": round(qpace_std, 2),
-            "dnf_pct": round(dnf_pct, 4),
-            "fl_pct": round(fl_pct, 4),
-            "avg_pos_gained": round(avg_pos_gained, 2),
-        }
-
-    return adjustments
-
-
-def _build_driver_params(
-    db: Session,
-    dynamic_params: dict | None = None,
-    grid_penalties: dict[int, int] | None = None,
-    history_adjustments: dict[int, dict] | None = None,
-) -> list[DriverParams]:
-    """Build driver params, using dynamic practice data when available,
-    falling back to history-adjusted defaults, then static defaults."""
-    drivers = db.query(Driver).all()
-    params = []
-    for d in drivers:
-        constructor = db.get(Constructor, d.constructor_id)
-        penalty = (grid_penalties or {}).get(d.id, 0)
-
-        if dynamic_params and d.code in dynamic_params:
-            dp = dynamic_params[d.code]
-            # Use history for avg_pos_gained if available, else static default
-            hist = (history_adjustments or {}).get(d.id)
-            defaults = DRIVER_DEFAULTS.get(d.code, {
-                "dnf_pct": 0.06, "fl_pct": 1/22, "avg_pos_gained": 0.3,
-            })
-            avg_pg = hist["avg_pos_gained"] if hist else defaults.get("avg_pos_gained", 0.3)
-            params.append(DriverParams(
-                id=d.id,
-                code=d.code,
-                constructor_ref=constructor.ref_id if constructor else "",
-                qpace_mean=dp.qpace_mean,
-                qpace_std=dp.qpace_std,
-                dnf_probability=dp.dnf_probability,
-                fl_probability=dp.fl_probability,
-                avg_positions_gained=avg_pg,
-                grid_penalty=penalty,
-            ))
-        elif history_adjustments and d.id in history_adjustments:
-            # No practice data but we have previous race results — use those
-            hist = history_adjustments[d.id]
-            params.append(DriverParams(
-                id=d.id,
-                code=d.code,
-                constructor_ref=constructor.ref_id if constructor else "",
-                qpace_mean=hist["qpace_mean"],
-                qpace_std=hist["qpace_std"],
-                dnf_probability=hist["dnf_pct"],
-                fl_probability=hist["fl_pct"],
-                avg_positions_gained=hist["avg_pos_gained"],
-                grid_penalty=penalty,
-            ))
-        else:
-            defaults = DRIVER_DEFAULTS.get(d.code, {
-                "qpace_mean": 12.0, "qpace_std": 4.0,
-                "dnf_pct": 0.06, "fl_pct": 1/22, "avg_pos_gained": 0.3,
-            })
-            params.append(DriverParams(
-                id=d.id,
-                code=d.code,
-                constructor_ref=constructor.ref_id if constructor else "",
-                qpace_mean=defaults["qpace_mean"],
-                qpace_std=defaults["qpace_std"],
-                dnf_probability=defaults["dnf_pct"],
-                fl_probability=defaults["fl_pct"],
-                avg_positions_gained=defaults["avg_pos_gained"],
-                grid_penalty=penalty,
-            ))
-    return params
-
-
-def _build_constructor_params(db: Session, driver_params: list[DriverParams]) -> list[ConstructorParams]:
-    constructors = db.query(Constructor).all()
-    driver_id_by_constructor = {}
-    for dp in driver_params:
-        driver_id_by_constructor.setdefault(dp.constructor_ref, []).append(dp.id)
-
-    dynamic_pace = get_dynamic_car_pace_std(db)
-
-    params = []
-    for c in constructors:
-        pitstop_pts = CONSTRUCTOR_PITSTOP_DEFAULTS.get(c.ref_id, 4.0)
-        car_std = dynamic_pace.get(c.ref_id, CONSTRUCTOR_CAR_PACE_STD.get(c.ref_id, 1.5))
-        params.append(ConstructorParams(
-            id=c.id,
-            ref_id=c.ref_id,
-            driver_ids=driver_id_by_constructor.get(c.ref_id, []),
-            expected_pitstop_pts=pitstop_pts,
-            car_pace_std=car_std,
-        ))
-    return params
 
 
 @router.post("/simulate/{race_id}")
@@ -364,6 +127,14 @@ def get_best_teams(request: BestTeamRequest, db: Session = Depends(get_db)):
     all_drivers = db.query(Driver).all()
     all_constructors = db.query(Constructor).all()
 
+    # When no simulation data exists for an asset, use price as a rough proxy
+    # for expected points.  More expensive assets are generally stronger, so
+    # this prevents the optimizer from defaulting to all-backmarker squads
+    # when simulation results haven't been generated yet.
+    # The multiplier is calibrated so a $30M driver ≈ 30 pts (ballpark for a
+    # front-runner in a normal weekend).
+    _PRICE_FALLBACK_MULTIPLIER = 1.0  # 1 pt per $1M
+
     driver_assets = []
     for d in all_drivers:
         price_row = (
@@ -372,6 +143,7 @@ def get_best_teams(request: BestTeamRequest, db: Session = Depends(get_db)):
             .order_by(FantasyPrice.id.desc())
             .first()
         )
+        price = price_row.price if price_row else 0
         sim = None
         if request.race_id:
             sim = (
@@ -384,8 +156,8 @@ def get_best_teams(request: BestTeamRequest, db: Session = Depends(get_db)):
         driver_assets.append(Asset(
             id=d.id,
             code=d.code,
-            price=price_row.price if price_row else 0,
-            expected_pts=sim.expected_pts_mean if sim else 0,
+            price=price,
+            expected_pts=sim.expected_pts_mean if sim else price * _PRICE_FALLBACK_MULTIPLIER,
             asset_type="driver",
             constructor_name=constructor.name if constructor else "",
             constructor_color=constructor.color if constructor else "#888",
@@ -399,6 +171,7 @@ def get_best_teams(request: BestTeamRequest, db: Session = Depends(get_db)):
             .order_by(FantasyPrice.id.desc())
             .first()
         )
+        price = price_row.price if price_row else 0
         sim = None
         if request.race_id:
             sim = (
@@ -410,8 +183,8 @@ def get_best_teams(request: BestTeamRequest, db: Session = Depends(get_db)):
         constructor_assets.append(Asset(
             id=c.id,
             code=c.ref_id,
-            price=price_row.price if price_row else 0,
-            expected_pts=sim.expected_pts_mean if sim else 0,
+            price=price,
+            expected_pts=sim.expected_pts_mean if sim else price * _PRICE_FALLBACK_MULTIPLIER,
             asset_type="constructor",
             constructor_name=c.name,
             constructor_color=c.color,
@@ -556,18 +329,22 @@ def compare_my_team(request: MyTeamRequest, db: Session = Depends(get_db)):
 @router.post("/simulate/batch")
 async def batch_simulate(
     n_simulations: int = 10000,
+    force: bool = False,
     db: Session = Depends(get_db),
 ):
     """Simulate all races that don't have simulation results yet.
-    Used by Chip Planner to populate data for all races."""
-    n_simulations = max(1000, min(50000, n_simulations))
+    Used by Chip Planner to populate data for all races.
+    Pass force=true to re-simulate races that already have results."""
+    # Cap simulations lower in batch mode to avoid HTTP timeouts
+    BATCH_MAX_SIMS = 10000
+    n_simulations = max(1000, min(BATCH_MAX_SIMS, n_simulations))
     races = db.query(Race).order_by(Race.round).all()
 
     simulated = []
     skipped = []
     for race in races:
         has_sim = db.query(SimulationResult).filter_by(race_id=race.id).first()
-        if has_sim:
+        if has_sim and not force:
             skipped.append(race.name)
             continue
 
@@ -594,6 +371,10 @@ async def batch_simulate(
         )
 
         try:
+            # Delete old results if force re-simulating
+            if force and has_sim:
+                db.query(SimulationResult).filter_by(race_id=race.id).delete()
+
             for r in results:
                 db.add(SimulationResult(
                     race_id=race.id,

@@ -65,7 +65,7 @@ async def _startup_pipeline():
         next_race = get_next_race_from_db(db)
         if next_race:
             logger.info(f"Startup pipeline: auto-simulating {next_race.name}...")
-            result = await run_auto_simulation(db, next_race.id)
+            result = await run_auto_simulation(db, next_race.id, force=True)
             logger.info(f"Auto-simulation result: {result.get('status')}")
         else:
             logger.info("No upcoming race found for auto-simulation")

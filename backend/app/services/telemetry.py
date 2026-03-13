@@ -7,6 +7,7 @@ Results are downsampled for web consumption (~200 points per lap trace).
 """
 
 import logging
+import threading
 import warnings
 from functools import lru_cache
 from typing import Any
@@ -40,6 +41,8 @@ COMPOUND_COLORS = {
     "UNKNOWN": "#888888",
 }
 
+_session_lock = threading.Lock()
+
 
 @lru_cache(maxsize=16)
 def _load_session_key(year: int, event: str, session_type: str) -> Any:
@@ -55,16 +58,20 @@ def _load_session_key(year: int, event: str, session_type: str) -> Any:
 
 
 def load_session(year: int, event: str, session_type: str):
-    """Load a FastF1 session, returning None on failure."""
-    try:
-        return _load_session_key(year, event, session_type)
-    except Exception as e:
-        msg = str(e)
-        if "not been loaded yet" in msg or "Failed to load" in msg or "No data" in msg.lower():
-            logger.info(f"Session data not available: {year} {event} {session_type}")
-        else:
-            logger.warning(f"Failed to load session {year} {event} {session_type}: {e}")
-        return None
+    """Load a FastF1 session, returning None on failure.
+
+    Uses a threading lock to protect the LRU cache from concurrent access.
+    """
+    with _session_lock:
+        try:
+            return _load_session_key(year, event, session_type)
+        except Exception as e:
+            msg = str(e)
+            if "not been loaded yet" in msg or "Failed to load" in msg or "No data" in msg.lower():
+                logger.info(f"Session data not available: {year} {event} {session_type}")
+            else:
+                logger.warning(f"Failed to load session {year} {event} {session_type}: {e}")
+            return None
 
 
 def get_available_sessions(year: int, event: str) -> list[str]:
@@ -85,23 +92,53 @@ def get_available_sessions(year: int, event: str) -> list[str]:
 
 
 def _td_to_seconds(td) -> float | None:
-    """Convert pandas Timedelta to seconds, returning None for NaT."""
+    """Convert pandas Timedelta to seconds, returning None for NaT/None/NaN."""
     import pandas as pd
+    if td is None:
+        return None
     try:
-        if td is None or pd.isna(td):
+        if isinstance(td, pd.Timedelta):
+            if pd.isna(td):
+                return None
+            return round(td.total_seconds(), 3)
+        # Handle numpy timedelta or other timedelta-like objects
+        if pd.isna(td):
             return None
-        return round(td.total_seconds(), 3)
+        if hasattr(td, 'total_seconds'):
+            return round(td.total_seconds(), 3)
+        return None
     except (ValueError, TypeError, OverflowError):
         return None
 
 
 def _downsample(distances: np.ndarray, values: np.ndarray, n_points: int = DOWNSAMPLE_POINTS) -> list[dict]:
-    """Downsample telemetry to evenly-spaced distance points."""
+    """Downsample telemetry to evenly-spaced distance points.
+
+    If input has fewer than 2 points, returns empty.
+    If input has n_points or fewer, returns original data without interpolation.
+    """
     if len(distances) < 2:
         return []
+    if len(distances) <= n_points:
+        return [{"distance": round(float(d), 1), "value": round(float(v), 2)} for d, v in zip(distances, values)]
     new_dist = np.linspace(distances.min(), distances.max(), n_points)
     new_vals = np.interp(new_dist, distances, values)
     return [{"distance": round(float(d), 1), "value": round(float(v), 2)} for d, v in zip(new_dist, new_vals)]
+
+
+def _pick_fastest_safe(laps):
+    """Safely pick the fastest lap, returning None if unavailable."""
+    try:
+        fastest = laps.pick_fastest()
+        if fastest is None:
+            return None
+        # pick_fastest returns a Lap (Series subclass); check for all-NaT
+        import pandas as pd
+        if isinstance(fastest, pd.Series) and pd.isna(fastest.get("LapTime")):
+            return None
+        return fastest
+    except Exception:
+        return None
 
 
 def get_lap_times(session, driver_code: str) -> list[dict]:
@@ -119,8 +156,8 @@ def get_lap_times(session, driver_code: str) -> list[dict]:
             result.append({
                 "lap_number": int(lap["LapNumber"]),
                 "time_seconds": lt,
-                "compound": str(lap.get("Compound", "UNKNOWN")),
-                "stint": int(lap.get("Stint", 1)),
+                "compound": str(lap.get("Compound", "UNKNOWN") or "UNKNOWN"),
+                "stint": int(lap.get("Stint", 1) if not _is_nan(lap.get("Stint")) else 1),
                 "is_personal_best": bool(lap.get("IsPersonalBest", False)),
             })
         return result
@@ -148,7 +185,7 @@ def get_sector_times(session, driver_code: str) -> list[dict]:
                 "s1": s1,
                 "s2": s2,
                 "s3": s3,
-                "compound": str(lap.get("Compound", "UNKNOWN")),
+                "compound": str(lap.get("Compound", "UNKNOWN") or "UNKNOWN"),
             })
         return result
     except Exception as e:
@@ -169,16 +206,24 @@ def get_speed_trace(session, driver_code: str, lap_number: int | None = None) ->
                 return {"points": [], "lap_number": lap_number, "lap_time": None}
             lap = lap.iloc[0]
         else:
-            lap = laps.pick_fastest()
-            if lap is None or (hasattr(lap, 'empty') and lap.empty):
+            lap = _pick_fastest_safe(laps)
+            if lap is None:
                 return {"points": [], "lap_number": None, "lap_time": None}
 
         tel = lap.get_car_data().add_distance()
         if tel.empty:
             return {"points": [], "lap_number": None, "lap_time": None}
 
-        distances = tel["Distance"].values
-        speeds = tel["Speed"].values
+        distances = tel["Distance"].values.astype(float)
+        speeds = tel["Speed"].values.astype(float)
+
+        # Remove NaN values
+        mask = np.isfinite(distances) & np.isfinite(speeds)
+        distances = distances[mask]
+        speeds = speeds[mask]
+
+        if len(distances) < 2:
+            return {"points": [], "lap_number": None, "lap_time": None}
 
         downsampled = _downsample(distances, speeds)
         points = [{"distance": p["distance"], "speed": p["value"]} for p in downsampled]
@@ -204,8 +249,8 @@ def get_tire_strategy(session, driver_code: str) -> list[dict]:
         current_stint = None
 
         for _, lap in laps.iterrows():
-            stint_num = int(lap.get("Stint", 1))
-            compound = str(lap.get("Compound", "UNKNOWN"))
+            stint_num = int(lap.get("Stint", 1) if not _is_nan(lap.get("Stint")) else 1)
+            compound = str(lap.get("Compound", "UNKNOWN") or "UNKNOWN")
             lap_num = int(lap["LapNumber"])
 
             if current_stint is None or current_stint["stint_number"] != stint_num:
@@ -242,7 +287,7 @@ def get_positions(session, driver_code: str) -> list[dict]:
         result = []
         for _, lap in laps.iterrows():
             pos = lap.get("Position")
-            if pos is None:
+            if pos is None or _is_nan(pos):
                 continue
             try:
                 result.append({
@@ -258,7 +303,7 @@ def get_positions(session, driver_code: str) -> list[dict]:
 
 
 def get_telemetry_trace(session, driver_code: str, lap_number: int | None = None) -> dict:
-    """Get detailed telemetry (speed, throttle, brake, DRS, gear) vs distance."""
+    """Get detailed telemetry (speed, throttle, brake, DRS, gear, RPM) vs distance."""
     try:
         laps = session.laps.pick_drivers(driver_code)
         if laps.empty:
@@ -270,36 +315,57 @@ def get_telemetry_trace(session, driver_code: str, lap_number: int | None = None
                 return {"points": [], "lap_number": lap_number}
             lap = lap.iloc[0]
         else:
-            lap = laps.pick_fastest()
-            if lap is None or (hasattr(lap, 'empty') and lap.empty):
+            lap = _pick_fastest_safe(laps)
+            if lap is None:
                 return {"points": [], "lap_number": None}
 
         tel = lap.get_car_data().add_distance()
         if tel.empty:
             return {"points": [], "lap_number": None}
 
-        dist = tel["Distance"].values
-        n = DOWNSAMPLE_POINTS
-        new_dist = np.linspace(dist.min(), dist.max(), n)
+        dist = tel["Distance"].values.astype(float)
 
-        speed = np.interp(new_dist, dist, tel["Speed"].values)
-        throttle = np.interp(new_dist, dist, tel["Throttle"].values)
-        brake_raw = tel["Brake"].values.astype(float)
-        brake = np.interp(new_dist, dist, brake_raw)
-        drs_raw = tel["DRS"].values.astype(float)
-        drs = np.interp(new_dist, dist, drs_raw)
-        gear = np.interp(new_dist, dist, tel["nGear"].values.astype(float))
+        if len(dist) < 2:
+            return {"points": [], "lap_number": None}
+
+        n = DOWNSAMPLE_POINTS
+        # Skip downsampling if fewer points than target
+        if len(dist) <= n:
+            new_dist = dist
+            n = len(dist)
+        else:
+            new_dist = np.linspace(dist.min(), dist.max(), n)
+
+        def _safe_interp(channel_name: str, default: float = 0.0) -> np.ndarray:
+            """Safely interpolate a telemetry channel, returning defaults if missing."""
+            if channel_name not in tel.columns:
+                return np.full(len(new_dist), default)
+            raw = tel[channel_name].values.astype(float)
+            if len(dist) <= DOWNSAMPLE_POINTS:
+                return raw
+            return np.interp(new_dist, dist, raw)
+
+        speed = _safe_interp("Speed")
+        throttle = _safe_interp("Throttle")
+        brake = _safe_interp("Brake")
+        drs = _safe_interp("DRS")
+        gear = _safe_interp("nGear")
+        rpm = _safe_interp("RPM")
 
         points = []
         for i in range(n):
-            points.append({
+            point = {
                 "distance": round(float(new_dist[i]), 1),
                 "speed": round(float(speed[i]), 1),
                 "throttle": round(float(throttle[i]), 1),
                 "brake": round(float(brake[i]), 2),
                 "drs": int(round(float(drs[i]))),
                 "gear": int(round(float(gear[i]))),
-            })
+            }
+            # Only include RPM if the channel existed
+            if "RPM" in tel.columns:
+                point["rpm"] = int(round(float(rpm[i])))
+            points.append(point)
 
         actual_lap = int(lap["LapNumber"]) if "LapNumber" in lap.index else lap_number
         return {"points": points, "lap_number": actual_lap}
@@ -319,6 +385,8 @@ def get_speed_traps(session, driver_code: str) -> list[dict]:
         traps = []
         for col, name in [("SpeedI1", "Intermediate 1"), ("SpeedI2", "Intermediate 2"),
                           ("SpeedFL", "Finish Line"), ("SpeedST", "Speed Trap")]:
+            if col not in laps.columns:
+                continue
             values = laps[col].dropna()
             if not values.empty:
                 traps.append({"trap_name": name, "speed": round(float(values.max()), 1)})
@@ -332,9 +400,17 @@ def get_speed_traps(session, driver_code: str) -> list[dict]:
 def get_lap_distribution(session, driver_code: str) -> dict | None:
     """Compute box plot statistics for lap times (excluding pit laps)."""
     try:
-        laps = session.laps.pick_drivers(driver_code).pick_wo_box()
+        laps = session.laps.pick_drivers(driver_code)
         if laps.empty:
             return None
+
+        # Try to exclude pit in/out laps; fall back to all laps
+        try:
+            filtered = laps.pick_wo_box()
+            if not filtered.empty:
+                laps = filtered
+        except (AttributeError, Exception):
+            pass
 
         times = []
         for _, lap in laps.iterrows():
@@ -342,10 +418,36 @@ def get_lap_distribution(session, driver_code: str) -> dict | None:
             if lt and lt > 0:
                 times.append(lt)
 
-        if len(times) < 3:
+        if len(times) < 1:
             return None
 
         times_arr = np.array(times)
+
+        # For very few laps, return simplified stats
+        if len(times) == 1:
+            val = round(float(times_arr[0]), 3)
+            return {
+                "median": val,
+                "q1": val,
+                "q3": val,
+                "whisker_low": val,
+                "whisker_high": val,
+                "outliers": [],
+                "count": 1,
+            }
+        if len(times) == 2:
+            lo, hi = round(float(times_arr.min()), 3), round(float(times_arr.max()), 3)
+            med = round(float(np.median(times_arr)), 3)
+            return {
+                "median": med,
+                "q1": lo,
+                "q3": hi,
+                "whisker_low": lo,
+                "whisker_high": hi,
+                "outliers": [],
+                "count": 2,
+            }
+
         q1 = float(np.percentile(times_arr, 25))
         median = float(np.median(times_arr))
         q3 = float(np.percentile(times_arr, 75))
@@ -371,15 +473,24 @@ def get_lap_distribution(session, driver_code: str) -> dict | None:
 def get_stint_degradation(session, driver_code: str) -> list[dict]:
     """Get lap time trend per stint to show tire degradation."""
     try:
-        laps = session.laps.pick_drivers(driver_code).pick_wo_box()
+        laps = session.laps.pick_drivers(driver_code)
         if laps.empty:
             return []
 
+        # Try to exclude pit in/out laps; fall back to all laps
+        try:
+            filtered = laps.pick_wo_box()
+            if not filtered.empty:
+                laps = filtered
+        except (AttributeError, Exception):
+            pass
+
         stints_data = {}
         for _, lap in laps.iterrows():
-            stint = int(lap.get("Stint", 1))
+            stint_raw = lap.get("Stint", 1)
+            stint = int(stint_raw if not _is_nan(stint_raw) else 1)
             lt = _td_to_seconds(lap.get("LapTime"))
-            compound = str(lap.get("Compound", "UNKNOWN"))
+            compound = str(lap.get("Compound", "UNKNOWN") or "UNKNOWN")
             if lt is None or lt <= 0:
                 continue
 
@@ -406,7 +517,7 @@ def get_stint_degradation(session, driver_code: str) -> list[dict]:
                 "compound": data["compound"],
                 "color": COMPOUND_COLORS.get(data["compound"], "#888888"),
                 "laps": lap_list,
-                "degradation_per_lap": round(max(0, deg), 4),
+                "degradation_per_lap": round(deg, 4),
             })
         return result
     except Exception as e:
@@ -427,12 +538,15 @@ def get_gear_distribution(session, driver_code: str, lap_number: int | None = No
                 return []
             lap = lap.iloc[0]
         else:
-            lap = laps.pick_fastest()
-            if lap is None or (hasattr(lap, 'empty') and lap.empty):
+            lap = _pick_fastest_safe(laps)
+            if lap is None:
                 return []
 
         tel = lap.get_car_data().add_distance()
         if tel.empty:
+            return []
+
+        if "nGear" not in tel.columns:
             return []
 
         gears = tel["nGear"].values
@@ -441,7 +555,7 @@ def get_gear_distribution(session, driver_code: str, lap_number: int | None = No
             return []
 
         result = []
-        for g in range(1, 9):
+        for g in range(0, 9):  # Include gear 0 (neutral) for completeness
             count = int(np.sum(gears == g))
             pct = round(count / total * 100, 1)
             if pct > 0:
@@ -458,37 +572,66 @@ def get_gap_analysis(session, driver1: str, driver2: str, lap_number: int | None
         laps1 = session.laps.pick_drivers(driver1)
         laps2 = session.laps.pick_drivers(driver2)
         if laps1.empty or laps2.empty:
-            return {"points": [], "lap_number": None}
+            return {"points": [], "lap_number": None, "driver1": driver1, "driver2": driver2}
 
         if lap_number is not None:
             lap1 = laps1[laps1["LapNumber"] == lap_number]
             lap2 = laps2[laps2["LapNumber"] == lap_number]
             if lap1.empty or lap2.empty:
-                return {"points": [], "lap_number": lap_number}
+                return {"points": [], "lap_number": lap_number, "driver1": driver1, "driver2": driver2}
             lap1, lap2 = lap1.iloc[0], lap2.iloc[0]
         else:
-            lap1 = laps1.pick_fastest()
-            lap2 = laps2.pick_fastest()
+            lap1 = _pick_fastest_safe(laps1)
+            lap2 = _pick_fastest_safe(laps2)
             if lap1 is None or lap2 is None:
-                return {"points": [], "lap_number": None}
+                return {"points": [], "lap_number": None, "driver1": driver1, "driver2": driver2}
 
         tel1 = lap1.get_car_data().add_distance()
         tel2 = lap2.get_car_data().add_distance()
         if tel1.empty or tel2.empty:
-            return {"points": [], "lap_number": None}
+            return {"points": [], "lap_number": None, "driver1": driver1, "driver2": driver2}
 
         # Build cumulative time arrays from lap-relative timestamps
-        dist1 = tel1["Distance"].values
-        dist2 = tel2["Distance"].values
-        # Time column is relative to session start; subtract lap start to get lap-relative
-        lap1_start = tel1["Time"].iloc[0]
-        lap2_start = tel2["Time"].iloc[0]
-        time1 = (tel1["Time"] - lap1_start).dt.total_seconds().values
-        time2 = (tel2["Time"] - lap2_start).dt.total_seconds().values
+        dist1 = tel1["Distance"].values.astype(float)
+        dist2 = tel2["Distance"].values.astype(float)
+
+        # Time column from get_car_data() is relative to session start.
+        # Subtract the first sample to get lap-relative time.
+        time1_raw = tel1["Time"]
+        time2_raw = tel2["Time"]
+        lap1_start = time1_raw.iloc[0]
+        lap2_start = time2_raw.iloc[0]
+        time1 = (time1_raw - lap1_start).dt.total_seconds().values.astype(float)
+        time2 = (time2_raw - lap2_start).dt.total_seconds().values.astype(float)
+
+        # Remove NaN values from each trace
+        mask1 = np.isfinite(dist1) & np.isfinite(time1)
+        mask2 = np.isfinite(dist2) & np.isfinite(time2)
+        dist1, time1 = dist1[mask1], time1[mask1]
+        dist2, time2 = dist2[mask2], time2[mask2]
+
+        if len(dist1) < 2 or len(dist2) < 2:
+            return {"points": [], "lap_number": None, "driver1": driver1, "driver2": driver2}
+
+        # Ensure distance arrays are monotonically increasing for np.interp
+        # (drop any points where distance doesn't increase)
+        def _make_monotonic(d, v):
+            keep = np.concatenate(([True], np.diff(d) > 0))
+            return d[keep], v[keep]
+
+        dist1, time1 = _make_monotonic(dist1, time1)
+        dist2, time2 = _make_monotonic(dist2, time2)
+
+        if len(dist1) < 2 or len(dist2) < 2:
+            return {"points": [], "lap_number": None, "driver1": driver1, "driver2": driver2}
 
         # Interpolate both to common distance axis
         max_dist = min(dist1.max(), dist2.max())
-        new_dist = np.linspace(0, max_dist, DOWNSAMPLE_POINTS)
+        min_dist = max(dist1.min(), dist2.min())
+        if max_dist <= min_dist:
+            return {"points": [], "lap_number": None, "driver1": driver1, "driver2": driver2}
+
+        new_dist = np.linspace(min_dist, max_dist, DOWNSAMPLE_POINTS)
         t1_interp = np.interp(new_dist, dist1, time1)
         t2_interp = np.interp(new_dist, dist2, time2)
         delta = t1_interp - t2_interp  # positive = driver1 behind
@@ -498,12 +641,30 @@ def get_gap_analysis(session, driver1: str, driver2: str, lap_number: int | None
             for d, dt in zip(new_dist, delta)
         ]
 
+        # Determine actual lap numbers used
+        actual_lap = lap_number
+        if lap_number is None:
+            ln1 = int(lap1["LapNumber"]) if "LapNumber" in lap1.index else None
+            ln2 = int(lap2["LapNumber"]) if "LapNumber" in lap2.index else None
+            actual_lap = {"driver1": ln1, "driver2": ln2}
+
         return {
             "points": points,
-            "lap_number": lap_number,
+            "lap_number": actual_lap,
             "driver1": driver1,
             "driver2": driver2,
         }
     except Exception as e:
         logger.warning(f"get_gap_analysis failed for {driver1} vs {driver2}: {e}")
-        return {"points": [], "lap_number": lap_number}
+        return {"points": [], "lap_number": lap_number, "driver1": driver1, "driver2": driver2}
+
+
+def _is_nan(value) -> bool:
+    """Check if a value is NaN/NaT/None safely."""
+    if value is None:
+        return True
+    try:
+        import pandas as pd
+        return pd.isna(value)
+    except (ValueError, TypeError):
+        return False

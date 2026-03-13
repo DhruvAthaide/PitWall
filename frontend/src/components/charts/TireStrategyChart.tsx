@@ -21,12 +21,16 @@ export default function TireStrategyChart({
   loading = false,
 }: TireStrategyChartProps) {
   if (loading) return <ChartSkeleton />;
+  if (stints.length === 0 && (!stints2 || stints2.length === 0)) {
+    return (
+      <div className="w-full h-64 flex items-center justify-center text-gray-500 text-sm">
+        No tire strategy data available
+      </div>
+    );
+  }
 
-  const maxLap = totalLaps || Math.max(
-    ...stints.map((s) => s.end_lap),
-    ...(stints2 || []).map((s) => s.end_lap),
-    1
-  );
+  const allEndLaps = [...stints.map((s) => s.end_lap), ...(stints2 || []).map((s) => s.end_lap)];
+  const maxLap = totalLaps || (allEndLaps.length > 0 ? Math.max(...allEndLaps) : 1);
 
   const renderStints = (driverStints: TireStint[], label: string) => (
     <div className="flex flex-col gap-1">

@@ -77,6 +77,54 @@ class DynamicDriverParams:
     quali_position: int | None = None
 
 
+def _resolve_event_name(year: int, base_name: str) -> str | None:
+    """Try multiple event name variations to find one FastF1 recognises.
+
+    Returns the first name that successfully loads an event schedule entry,
+    or *None* if nothing works.
+    """
+    candidates = []
+
+    # 1. Standard "X Grand Prix"
+    if "Grand Prix" not in base_name:
+        candidates.append(f"{base_name} Grand Prix")
+    else:
+        candidates.append(base_name)
+
+    # 2. The raw base_name itself (e.g. just "Australia")
+    candidates.append(base_name.replace(" Grand Prix", ""))
+
+    # 3. Try looking up by schedule
+    try:
+        schedule = _get_fastf1().get_event_schedule(year)
+        if schedule is not None and not schedule.empty:
+            base_lower = base_name.lower().replace(" grand prix", "")
+            for _, row in schedule.iterrows():
+                event = str(row.get("EventName", ""))
+                country = str(row.get("Country", ""))
+                location = str(row.get("Location", ""))
+                if base_lower in event.lower() or base_lower in country.lower() or base_lower in location.lower():
+                    if event and event not in candidates:
+                        candidates.insert(0, event)  # highest priority
+                    break
+    except Exception as e:
+        logger.debug("Could not search FastF1 schedule for '%s': %s", base_name, e)
+
+    # Validate each candidate by trying to load it
+    for name in candidates:
+        try:
+            _get_fastf1().get_session(year, name, "FP1")
+            return name
+        except Exception:
+            continue
+
+    logger.warning(
+        "Could not resolve FastF1 event name for '%s' %d. Tried: %s",
+        base_name, year, candidates,
+    )
+    return candidates[0] if candidates else base_name
+
+
 def _process_fastf1_session(session_name: str, year: int, event_name: str) -> list[PracticeResult]:
     """Load a session via FastF1 and extract pace data."""
     try:
@@ -136,9 +184,9 @@ def _process_fastf1_session(session_name: str, year: int, event_name: str) -> li
     except Exception as e:
         msg = str(e)
         if "not been loaded yet" in msg or "Failed to load" in msg:
-            logger.info(f"{session_name} data not yet available (session may still be in progress or data not published yet)")
+            logger.info("%s data not yet available for %s %d (session may not be published yet)", session_name, event_name, year)
         else:
-            logger.warning(f"Failed to load {session_name} via FastF1: {e}")
+            logger.warning("FastF1 fetch failed for %s %s %d: %s", session_name, event_name, year, e)
         return []
 
 
@@ -188,7 +236,7 @@ def _extract_long_runs(year: int, event_name: str) -> dict[str, LongRunData]:
         return long_runs
 
     except Exception as e:
-        logger.warning(f"Failed to extract long runs: {e}")
+        logger.warning("Failed to extract long runs for %s %d: %s", event_name, year, e)
         return {}
 
 
@@ -211,7 +259,7 @@ def _fetch_weather(year: int, event_name: str, session_name: str = "FP3") -> Wea
                 rainfall=bool(last.get("Rainfall", False)) if "Rainfall" in last else False,
             )
     except Exception as e:
-        logger.warning(f"Failed to fetch weather: {e}")
+        logger.warning("Failed to fetch weather for %s %s %d: %s", session_name, event_name, year, e)
 
     return WeatherInfo()
 
@@ -232,9 +280,11 @@ def fetch_practice_data(
         "qualifying": "Q",
     }
 
-    event_name = meeting_name
-    if "Grand Prix" not in event_name:
-        event_name = f"{event_name} Grand Prix"
+    # Resolve event name with fallback variations
+    event_name = _resolve_event_name(year, meeting_name)
+    if event_name is None:
+        logger.warning("Could not resolve event name for '%s' %d, skipping practice data", meeting_name, year)
+        return sessions
 
     for key, fastf1_name in session_map.items():
         results = _process_fastf1_session(fastf1_name, year, event_name)
@@ -242,7 +292,7 @@ def fetch_practice_data(
             for r in results:
                 r.session_type = key
             sessions[key] = results
-            logger.info(f"Loaded {len(results)} drivers from {fastf1_name}")
+            logger.info("Loaded %d drivers from %s for %s", len(results), fastf1_name, event_name)
 
     return sessions
 
@@ -252,9 +302,10 @@ def fetch_session_metadata(
     meeting_name: str,
 ) -> dict:
     """Fetch long runs and weather data."""
-    event_name = meeting_name
-    if "Grand Prix" not in event_name:
-        event_name = f"{event_name} Grand Prix"
+    event_name = _resolve_event_name(year, meeting_name)
+    if event_name is None:
+        logger.warning("Could not resolve event name for '%s' %d, skipping metadata", meeting_name, year)
+        return {"long_runs": {}, "weather": WeatherInfo()}
 
     long_runs = _extract_long_runs(year, event_name)
 
@@ -394,16 +445,18 @@ def fetch_race_results(year: int, event_name: str, db=None, driver_map: dict | N
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
 
-            full_event = event_name
-            if "Grand Prix" not in full_event:
-                full_event = f"{event_name} Grand Prix"
+            # Try to resolve the event name with fallbacks
+            resolved_name = _resolve_event_name(year, event_name)
+            if resolved_name is None:
+                logger.warning("Could not resolve event for race results: '%s' %d", event_name, year)
+                return None
 
-            session = _get_fastf1().get_session(year, full_event, "R")
+            session = _get_fastf1().get_session(year, resolved_name, "R")
             session.load(telemetry=False, weather=False, messages=False, laps=False)
 
         results_df = session.results
         if results_df is None or results_df.empty:
-            logger.info(f"No race results available for {full_event} {year}")
+            logger.info("No race results available for %s %d", resolved_name, year)
             return None
 
         # Build driver code -> driver_id mapping from DB (only if not pre-supplied)
@@ -419,25 +472,37 @@ def fetch_race_results(year: int, event_name: str, db=None, driver_map: dict | N
             code = str(row.get("Abbreviation", ""))
             if not code or code not in driver_map:
                 if code:
-                    logger.warning(f"Driver code '{code}' not found in DB, skipping")
+                    logger.warning("Driver code '%s' not found in DB, skipping", code)
                 continue
 
             driver_id = driver_map[code]
 
-            # Grid position
+            # Grid position – NaN-safe
             try:
-                grid = int(float(row.get("GridPosition", 22)))
+                gval = float(row.get("GridPosition", 22))
+                grid = 22 if np.isnan(gval) else int(gval)
             except (ValueError, TypeError):
                 grid = 22
             if grid == 0:
                 grid = 22  # Pit lane start
 
-            # Race position
-            position = row.get("Position", None)
-            try:
-                race_pos = int(float(position)) if position is not None else 22
-            except (ValueError, TypeError):
-                race_pos = 22
+            # Race position – try ClassifiedPosition first, fall back to Position
+            # FastF1 may return NaN for Position if classification is incomplete
+            race_pos = 22
+            for pos_col in ("ClassifiedPosition", "Position"):
+                try:
+                    raw = row.get(pos_col, None)
+                    if raw is None:
+                        continue
+                    fpos = float(raw)
+                    if not np.isnan(fpos):
+                        race_pos = int(fpos)
+                        break
+                except (ValueError, TypeError):
+                    continue
+            if race_pos == 22:
+                logger.warning("No valid position for %s (Position=%r, ClassifiedPosition=%r)",
+                               code, row.get("Position"), row.get("ClassifiedPosition"))
 
             # DNF detection
             status = str(row.get("Status", ""))
@@ -472,16 +537,16 @@ def fetch_race_results(year: int, event_name: str, db=None, driver_map: dict | N
             })
 
         if not parsed:
-            logger.info(f"No valid driver results parsed for {full_event} {year}")
+            logger.info("No valid driver results parsed for %s %d", resolved_name, year)
             return None
 
-        logger.info(f"Fetched {len(parsed)} driver results for {full_event} {year}")
+        logger.info("Fetched %d driver results for %s %d", len(parsed), resolved_name, year)
         return parsed
 
     except Exception as e:
         msg = str(e)
         if "not been loaded yet" in msg or "Failed to load" in msg or "No data" in msg.lower():
-            logger.info(f"Race results not yet available for {event_name} {year}")
+            logger.info("Race results not yet available for %s %d", event_name, year)
         else:
-            logger.warning(f"Failed to fetch race results for {event_name} {year}: {e}")
+            logger.warning("FastF1 fetch failed for race results %s %d: %s", event_name, year, e)
         return None

@@ -1,79 +1,98 @@
 """Default simulation parameters for each driver.
 
-2026 new regulations: all defaults are flattened to equal/unknown since the
-pecking order is unknown. These only serve as fallbacks when no practice
-session data is available. Once FP1/FP2/FP3 data is fetched from OpenF1,
-the simulation will use real lap-time-derived parameters instead.
+2026 early-season baseline: Mercedes and Ferrari are the class of the field,
+McLaren and Red Bull close behind, then a midfield pack, then backmarkers.
+
+qpace_mean = expected qualifying position (lower = faster, 1 = pole favorite)
+qpace_std  = session-to-session variability (lower = more consistent)
+dnf_pct    = retirement probability per race
+fl_pct     = fastest lap probability (weighted by raw pace)
+avg_pos_gained = net positions typically gained/lost on lap 1 + race craft
 """
 
-# Flat defaults: mid-grid qpace for everyone (11.5 for 22 drivers)
-# Slight variation only for DNF% (rookies slightly higher)
-_MIDGRID = 11.5
-_STD = 4.0
-_DNF = 0.06
-_FL = 1 / 22  # Equal probability for everyone
+# ---------------------------------------------------------------------------
+# DRIVER DEFAULTS
+# Grouped by constructor performance tier based on 2026 results + prices
+# ---------------------------------------------------------------------------
 
 DRIVER_DEFAULTS = {
-    "VER": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.05, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "RUS": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.05, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "NOR": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.05, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "PIA": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.05, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "ANT": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.08, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "LEC": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.05, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "HAM": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.05, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "HAD": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.08, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "GAS": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": _DNF, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "SAI": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.05, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "ALB": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.05, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "ALO": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.05, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "STR": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": _DNF, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "BEA": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.08, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "OCO": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": _DNF, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "LAW": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.07, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "HUL": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": _DNF, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "BOR": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.08, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "COL": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.08, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "LIN": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": 0.08, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "PER": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": _DNF, "fl_pct": _FL, "avg_pos_gained": 0.3},
-    "BOT": {"qpace_mean": _MIDGRID, "qpace_std": _STD, "dnf_pct": _DNF, "fl_pct": _FL, "avg_pos_gained": 0.3},
+    # === TIER 1: Mercedes (dominant early 2026) ===
+    "RUS": {"qpace_mean": 3.0, "qpace_std": 1.8, "dnf_pct": 0.04, "fl_pct": 0.12, "avg_pos_gained": 0.5},
+    "ANT": {"qpace_mean": 4.5, "qpace_std": 2.2, "dnf_pct": 0.07, "fl_pct": 0.08, "avg_pos_gained": 0.3},
+
+    # === TIER 1: Ferrari (dominant early 2026) ===
+    "LEC": {"qpace_mean": 3.5, "qpace_std": 1.8, "dnf_pct": 0.05, "fl_pct": 0.11, "avg_pos_gained": 0.4},
+    "HAM": {"qpace_mean": 4.0, "qpace_std": 1.9, "dnf_pct": 0.04, "fl_pct": 0.10, "avg_pos_gained": 0.6},
+
+    # === TIER 2: McLaren (strong contenders) ===
+    "NOR": {"qpace_mean": 4.0, "qpace_std": 2.0, "dnf_pct": 0.04, "fl_pct": 0.09, "avg_pos_gained": 0.3},
+    "PIA": {"qpace_mean": 4.5, "qpace_std": 2.0, "dnf_pct": 0.05, "fl_pct": 0.08, "avg_pos_gained": 0.2},
+
+    # === TIER 2: Red Bull (adjusting to new regs) ===
+    "VER": {"qpace_mean": 3.5, "qpace_std": 2.2, "dnf_pct": 0.03, "fl_pct": 0.13, "avg_pos_gained": 0.8},
+    "HAD": {"qpace_mean": 8.0, "qpace_std": 2.5, "dnf_pct": 0.08, "fl_pct": 0.03, "avg_pos_gained": 0.1},
+
+    # === TIER 3: Upper midfield ===
+    "GAS": {"qpace_mean": 9.0,  "qpace_std": 2.5, "dnf_pct": 0.06, "fl_pct": 0.03, "avg_pos_gained": 0.2},
+    "SAI": {"qpace_mean": 8.5,  "qpace_std": 2.5, "dnf_pct": 0.05, "fl_pct": 0.03, "avg_pos_gained": 0.3},
+    "ALB": {"qpace_mean": 9.5,  "qpace_std": 2.5, "dnf_pct": 0.05, "fl_pct": 0.02, "avg_pos_gained": 0.2},
+
+    # === TIER 4: Lower midfield ===
+    "ALO": {"qpace_mean": 11.0, "qpace_std": 2.8, "dnf_pct": 0.05, "fl_pct": 0.02, "avg_pos_gained": 0.4},
+    "STR": {"qpace_mean": 13.0, "qpace_std": 2.8, "dnf_pct": 0.06, "fl_pct": 0.01, "avg_pos_gained": 0.0},
+    "BEA": {"qpace_mean": 11.5, "qpace_std": 3.0, "dnf_pct": 0.07, "fl_pct": 0.02, "avg_pos_gained": 0.1},
+    "OCO": {"qpace_mean": 12.0, "qpace_std": 2.8, "dnf_pct": 0.06, "fl_pct": 0.01, "avg_pos_gained": 0.1},
+    "LAW": {"qpace_mean": 10.5, "qpace_std": 2.8, "dnf_pct": 0.06, "fl_pct": 0.02, "avg_pos_gained": 0.2},
+    "HUL": {"qpace_mean": 12.0, "qpace_std": 2.8, "dnf_pct": 0.06, "fl_pct": 0.01, "avg_pos_gained": 0.1},
+
+    # === TIER 5: Backmarkers ===
+    "BOR": {"qpace_mean": 14.0, "qpace_std": 3.0, "dnf_pct": 0.08, "fl_pct": 0.01, "avg_pos_gained": 0.0},
+    "COL": {"qpace_mean": 13.5, "qpace_std": 3.0, "dnf_pct": 0.07, "fl_pct": 0.01, "avg_pos_gained": 0.0},
+    "LIN": {"qpace_mean": 14.5, "qpace_std": 3.0, "dnf_pct": 0.08, "fl_pct": 0.01, "avg_pos_gained": -0.1},
+    "PER": {"qpace_mean": 13.0, "qpace_std": 3.0, "dnf_pct": 0.07, "fl_pct": 0.01, "avg_pos_gained": 0.1},
+    "BOT": {"qpace_mean": 14.0, "qpace_std": 3.0, "dnf_pct": 0.06, "fl_pct": 0.01, "avg_pos_gained": 0.0},
 }
 
-# Pitstop points flattened too — no basis for 2026 rankings
+
+# ---------------------------------------------------------------------------
+# CONSTRUCTOR DEFAULTS
+# ---------------------------------------------------------------------------
+
+# Expected pitstop fantasy points per constructor (2-10 scale based on crew speed)
 CONSTRUCTOR_PITSTOP_DEFAULTS = {
-    "red_bull": 4.0,
-    "mclaren": 4.0,
-    "mercedes": 4.0,
-    "ferrari": 4.0,
-    "williams": 4.0,
-    "alpine": 4.0,
-    "aston_martin": 4.0,
-    "haas": 4.0,
-    "audi": 4.0,
-    "rb": 4.0,
-    "cadillac": 4.0,
+    "red_bull":      7.0,   # historically top-tier pit crew
+    "mclaren":       6.5,
+    "mercedes":      7.0,   # consistently fast stops
+    "ferrari":       5.5,   # occasional slow stops
+    "williams":      5.0,
+    "alpine":        4.5,
+    "aston_martin":  4.5,
+    "haas":          4.0,
+    "audi":          4.0,   # new team, unproven
+    "rb":            5.0,
+    "cadillac":      3.5,   # new team
 }
 
 # Car pace variability per constructor (std dev in positions)
-# How much a team's weekend form varies from simulation to simulation.
-# 1.5 is the default — all equal under new 2026 regs.
+# Top teams are more consistent; backmarkers have wilder swings.
 CONSTRUCTOR_CAR_PACE_STD = {
-    "red_bull": 1.5,
-    "mclaren": 1.5,
-    "mercedes": 1.5,
-    "ferrari": 1.5,
-    "williams": 1.5,
-    "alpine": 1.5,
-    "aston_martin": 1.5,
-    "haas": 1.5,
-    "audi": 1.5,
-    "rb": 1.5,
-    "cadillac": 1.5,
+    "red_bull":      1.0,
+    "mclaren":       1.0,
+    "mercedes":      0.8,   # very consistent early 2026
+    "ferrari":       0.9,   # consistent but occasional off-weekend
+    "williams":      1.8,
+    "alpine":        1.8,
+    "aston_martin":  2.0,   # inconsistent
+    "haas":          2.2,
+    "audi":          2.2,
+    "rb":            2.0,
+    "cadillac":      2.5,   # most variable
 }
 
 
 def get_dynamic_pitstop_defaults(db) -> dict[str, float]:
     """Query actual pitstop data and return updated expected points per constructor ref_id.
-    Falls back to 4.0 pts when no data exists."""
+    Falls back to static defaults when no data exists."""
     from app.models import Constructor, PitstopResult
     from app.simulation.scoring import score_pitstop_time
 
@@ -92,7 +111,7 @@ def get_dynamic_pitstop_defaults(db) -> dict[str, float]:
 def get_dynamic_car_pace_std(db) -> dict[str, float]:
     """Compute per-constructor car pace variability from qualifying results.
     Uses standard deviation of qualifying positions across races.
-    Falls back to 1.5 when fewer than 2 race results exist."""
+    Falls back to static defaults when fewer than 4 results exist."""
     import statistics
     from app.models import Constructor, Driver, RaceResult
 

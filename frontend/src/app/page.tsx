@@ -50,11 +50,19 @@ export default function TeamCalculator() {
   const [cachedAt, setCachedAt] = useState<string | null>(null);
   const [driverTrends, setDriverTrends] = useState<Record<number, string>>({});
 
+  // Togglable column visibility
+  const [showDriverCols, setShowDriverCols] = useState({ price: true, xDelta: true, xPts: true, ppm: false });
+  const [showConsCols, setShowConsCols] = useState({ price: true, xDelta: true, xPts: true, ppm: false });
+  const [driverColMenu, setDriverColMenu] = useState(false);
+  const [consColMenu, setConsColMenu] = useState(false);
+  const [expandedTeamIdx, setExpandedTeamIdx] = useState<number | null>(null);
+  const [showBestCols, setShowBestCols] = useState({ cost: true, xDelta: true, xPts: true });
+  const [bestColMenu, setBestColMenu] = useState(false);
+
   useEffect(() => {
     Promise.all([api.getDrivers(), api.getConstructors(), api.getRaces(), api.getNextRace()]).then(
       ([d, c, r, nextRace]) => {
         setDrivers(d); setConstructors(c); setRaces(r);
-        // Auto-select next race
         if (nextRace && nextRace.id) {
           setSelectedRaceId(nextRace.id);
         }
@@ -63,11 +71,9 @@ export default function TeamCalculator() {
     api.getDriverTrends().then(setDriverTrends).catch(() => {});
   }, []);
 
-  // Auto-load cached predictions when race is selected
   useEffect(() => {
     if (!selectedRaceId) return;
     api.getPricePredictions(selectedRaceId).then(setPricePredictions).catch(() => {});
-    // Try to load cached simulation results
     api.getCachedSimulation(selectedRaceId).then((data) => {
       if (data.status === "ok" && data.results && data.results.length > 0) {
         setSimResults(data.results);
@@ -83,7 +89,6 @@ export default function TeamCalculator() {
           weather: data.weather || null,
           simulated_at: data.simulated_at || "",
         });
-        // Refresh drivers/constructors with expected_pts
         Promise.all([
           api.getDrivers(selectedRaceId),
           api.getConstructors(selectedRaceId),
@@ -241,13 +246,13 @@ export default function TeamCalculator() {
     tooltip?: string;
   }) => (
     <th
-      className="px-3 py-3 text-right cursor-pointer hover:text-gray-300 transition-colors select-none group"
+      className="px-2 py-2 text-right cursor-pointer hover:text-gray-300 transition-colors select-none group whitespace-nowrap"
       onClick={() => setSortFn(toggleSort(sortState, column))}
     >
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-0.5">
         {label}
         {tooltip && <InfoTooltip text={tooltip} />}
-        <span className="text-[8px] opacity-50 group-hover:opacity-100 transition-opacity">
+        <span className="text-[7px] opacity-50 group-hover:opacity-100">
           {sortState.key === column ? (sortState.dir === "desc" ? "\u25BC" : "\u25B2") : "\u25BC"}
         </span>
       </span>
@@ -256,21 +261,44 @@ export default function TeamCalculator() {
 
   const hasSimData = drivers.some((d) => d.expected_pts !== null && d.expected_pts !== undefined);
   const activeFilters = includeDrivers.size + excludeDrivers.size + includeConstructors.size + excludeConstructors.size;
-
   const selectedRace = races.find((r) => r.id === selectedRaceId);
 
+  // Column toggle dropdown component
+  const ColumnMenu = ({ show, cols, setCols, onClose }: {
+    show: boolean;
+    cols: Record<string, boolean>;
+    setCols: (c: Record<string, boolean>) => void;
+    onClose: () => void;
+  }) => {
+    if (!show) return null;
+    const labels: Record<string, string> = { price: "$", xDelta: "x\u0394$", xPts: "xPts", ppm: "PPM", cost: "$", };
+    return (
+      <>
+        <div className="fixed inset-0 z-40" onClick={onClose} />
+        <div className="absolute right-0 top-full mt-1 z-50 rounded-lg p-2 min-w-[120px]" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          {Object.entries(cols).map(([key, val]) => (
+            <label key={key} className="flex items-center gap-2 px-2 py-1.5 text-xs text-gray-300 cursor-pointer hover:bg-white/5 rounded">
+              <input type="checkbox" checked={val} onChange={() => setCols({ ...cols, [key]: !val })} className="rounded accent-red-600" />
+              {labels[key] || key}
+            </label>
+          ))}
+        </div>
+      </>
+    );
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header Bar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
             Team Calculator
           </h1>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-[10px] text-gray-500 mt-0.5">
             Monte Carlo simulation + brute-force optimization
             {selectedRaceId && races.find((r) => r.id === selectedRaceId)?.has_sprint && (
-              <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: "rgba(255,208,0,0.15)", color: "var(--timing-yellow)", border: "1px solid rgba(255,208,0,0.3)" }}>SPRINT WEEKEND</span>
+              <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: "rgba(255,208,0,0.15)", color: "var(--timing-yellow)", border: "1px solid rgba(255,208,0,0.3)" }}>SPRINT</span>
             )}
             {cachedStatus === "cached" && cachedAt && (
               <span className="ml-2 text-[10px] font-mono" style={{ color: "var(--neon-cyan)" }}>
@@ -281,249 +309,405 @@ export default function TeamCalculator() {
         </div>
         <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
           <RaceSelector races={races} selectedRaceId={selectedRaceId} onSelect={setSelectedRaceId} />
-          <button
-            onClick={handleSimulate}
-            disabled={!selectedRaceId || simulating}
-            className="px-4 py-2 rounded-xl text-xs font-bold tracking-wide uppercase transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
-            style={{
-              background: cachedStatus === "cached" ? "transparent" : selectedRaceId && !simulating ? "linear-gradient(135deg, #e10600, #b30500)" : "var(--card-border)",
-              color: "white",
-              border: cachedStatus === "cached" ? "1px solid var(--card-border)" : "none",
-              boxShadow: cachedStatus !== "cached" && selectedRaceId && !simulating ? "0 4px 20px rgba(225,6,0,0.3)" : "none",
-            }}
-          >
-            {simulating ? (
-              <span className="flex items-center gap-2">
-                <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Simulating...
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                {cachedStatus === "cached" ? "Re-run" : "Simulate"}
-              </span>
-            )}
-          </button>
         </div>
       </div>
 
-      {/* Simulation Meta Bar */}
+      {/* Sim Meta Bar */}
       <AnimatePresence>
         {simMeta && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="rounded-xl overflow-hidden glass-card"
-          >
-            <div className="px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="rounded-xl overflow-hidden glass-card">
+            <div className="px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-emerald-500 pulse-glow" />
-                <span className="text-xs font-semibold text-gray-300">{simMeta.race_name}</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 pulse-glow" />
+                <span className="text-[11px] font-semibold text-gray-300">{simMeta.race_name}</span>
               </div>
-              <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                {simMeta.simulated_at ? new Date(simMeta.simulated_at).toLocaleTimeString() : "N/A"}
-              </div>
-              <div className="text-[11px] font-mono text-gray-500">
-                {simMeta.n_simulations.toLocaleString()} sims
-              </div>
-              {simMeta.data_sources.length > 0 && (
-                <div className="flex items-center gap-1.5">
-                  {simMeta.data_sources.map((src) => (
-                    <span key={src} className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-                      style={{
-                        background: src.includes("qualifying") ? "rgba(168,85,247,0.15)" : "rgba(59,130,246,0.15)",
-                        color: src.includes("qualifying") ? "#a855f7" : "#3b82f6",
-                        border: `1px solid ${src.includes("qualifying") ? "rgba(168,85,247,0.2)" : "rgba(59,130,246,0.2)"}`,
-                      }}>
-                      {src}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {simMeta.has_qualifying && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: "rgba(168,85,247,0.15)", color: "#a855f7", border: "1px solid rgba(168,85,247,0.25)" }}>
-                  QUALI DATA
+              <div className="text-[10px] font-mono text-gray-500">{simMeta.n_simulations.toLocaleString()} sims</div>
+              {simMeta.data_sources.length > 0 && simMeta.data_sources.map((src) => (
+                <span key={src} className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
+                  style={{ background: src.includes("qualifying") ? "rgba(168,85,247,0.15)" : "rgba(59,130,246,0.15)", color: src.includes("qualifying") ? "#a855f7" : "#3b82f6" }}>
+                  {src}
                 </span>
-              )}
-              {simMeta.has_long_runs && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.25)" }}>
-                  LONG RUNS
-                </span>
-              )}
+              ))}
+              {simMeta.has_qualifying && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: "rgba(168,85,247,0.15)", color: "#a855f7" }}>QUALI</span>}
+              {simMeta.has_long_runs && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>LONG RUNS</span>}
               {simMeta.weather && (
-                <div className="flex items-center gap-2 text-[11px] text-gray-400">
-                  <span>{simMeta.weather.rainfall ? "🌧" : "☀"}</span>
-                  <span>Air {simMeta.weather.air_temp}°C</span>
-                  <span>Track {simMeta.weather.track_temp}°C</span>
-                  {simMeta.weather.wind_speed > 0 && <span>Wind {simMeta.weather.wind_speed} km/h</span>}
-                </div>
+                <span className="text-[10px] text-gray-400">
+                  {simMeta.weather.rainfall ? "Rain" : "Dry"} {simMeta.weather.air_temp}°C
+                </span>
               )}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-4 md:gap-6">
-        {/* Left Column: Tables */}
-        <div className="space-y-6">
-          {/* Drivers Table */}
-          <div className="rounded-2xl overflow-hidden glass-card">
-            <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400">Drivers</h2>
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-mono" style={{ background: "var(--card-border)", color: "#6b7280" }}>
-                  {filteredDrivers.length}
-                </span>
-              </div>
+      {/* ========= 3-COLUMN LAYOUT ========= */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] xl:grid-cols-[minmax(0,1.2fr)_300px_minmax(0,1fr)] gap-4">
+
+        {/* ===== LEFT: Best Teams ===== */}
+        <div className="rounded-2xl overflow-hidden glass-card order-2 xl:order-1">
+          <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+            <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400">Best Teams</h2>
+            <div className="flex items-center gap-2">
               <div className="relative">
-                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                <input
-                  type="text"
-                  value={driverSearch}
-                  onChange={(e) => setDriverSearch(e.target.value)}
-                  placeholder="Search drivers..."
-                  className="text-xs pl-7 pr-3 py-1.5 rounded-lg bg-transparent focus:outline-none focus:ring-1 focus:ring-red-900/50 placeholder-gray-600 w-40"
-                  style={{ border: "1px solid var(--card-border)" }}
-                />
+                <button onClick={() => setBestColMenu(!bestColMenu)} className="text-[10px] px-2 py-1 rounded-md hover:bg-white/5 text-gray-500 flex items-center gap-1" style={{ border: "1px solid var(--card-border)" }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7m0-18H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7m0-18v18"/></svg>
+                  Columns
+                </button>
+                <ColumnMenu show={bestColMenu} cols={showBestCols} setCols={(c) => setShowBestCols(c as typeof showBestCols)} onClose={() => setBestColMenu(false)} />
               </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[11px] uppercase tracking-wider font-semibold text-gray-600">
-                <thead>
+          </div>
+
+          <div className="overflow-x-auto" style={{ maxHeight: "calc(100vh - 220px)" }}>
+            {bestTeams.length === 0 ? (
+              <div className="px-4 py-12 text-center">
+                <div className="text-gray-600 text-xs">
+                  {hasSimData ? "Click \"Find Best Teams\" to optimize" : "Run simulation first, then optimize"}
+                </div>
+              </div>
+            ) : (
+              <table className="w-full text-[10px] uppercase tracking-wider font-semibold text-gray-600">
+                <thead className="sticky top-0 z-10" style={{ background: "var(--card-bg)" }}>
                   <tr style={{ borderBottom: "1px solid var(--card-border)" }}>
-                    <th className="px-4 py-3 text-left cursor-pointer hover:text-gray-300 transition-colors" onClick={() => setDriverSort(toggleSort(driverSort, "name"))}>
-                      <span className="inline-flex items-center gap-1">
-                        Driver
-                        <span className="text-[8px] opacity-50">{driverSort.key === "name" ? (driverSort.dir === "desc" ? "\u25BC" : "\u25B2") : ""}</span>
-                      </span>
-                    </th>
-                    <SortHeader sortState={driverSort} column="price" label="Price" setSortFn={setDriverSort} />
-                    <SortHeader sortState={driverSort} column="xPts" label="xPts" setSortFn={setDriverSort} tooltip="Expected Points — average predicted score from 50,000 Monte Carlo simulations" />
-                    <SortHeader sortState={driverSort} column="ppm" label="PPM" setSortFn={setDriverSort} tooltip="Points Per Million — expected points divided by price. Higher = better value" />
-                    <SortHeader sortState={driverSort} column="xDelta" label="x&Delta;$" setSortFn={setDriverSort} tooltip="Predicted Price Change — expected price movement based on performance vs current price" />
-                    <th className="px-3 py-3 text-center w-24">Lock</th>
-                    {hasSimData && <th className="px-3 py-3 text-center w-10" title="DRS Boost">DRS</th>}
+                    <th className="px-3 py-2 text-left w-8">#</th>
+                    <th className="px-2 py-2 text-left">CR</th>
+                    <th className="px-2 py-2 text-left">x2</th>
+                    <th className="px-2 py-2 text-left">DR</th>
+                    {showBestCols.cost && <th className="px-2 py-2 text-right">$</th>}
+                    {showBestCols.xDelta && <th className="px-2 py-2 text-right">x&Delta;$</th>}
+                    {showBestCols.xPts && (
+                      <th className="px-2 py-2 text-right cursor-pointer" onClick={() => {}}>xPts &darr;</th>
+                    )}
+                    <th className="w-6"></th>
                   </tr>
                 </thead>
-                <tbody className="text-sm normal-case tracking-normal font-normal">
+                <tbody className="text-xs normal-case tracking-normal font-normal">
+                  {bestTeams.map((team, idx) => {
+                    const drsDriver = team.drs_driver;
+                    const otherDrivers = team.drivers.filter((d) => d.id !== drsDriver.id);
+                    const teamXDelta = [...team.drivers, ...team.constructors].reduce((sum, a) => {
+                      const pred = "code" in a ? getDriverPrediction(a.id) : getConstructorPrediction(a.id);
+                      return sum + (pred?.predicted_change ?? 0);
+                    }, 0);
+                    const isExpanded = expandedTeamIdx === idx;
+
+                    return (
+                      <tr
+                        key={idx}
+                        className={`transition-colors cursor-pointer ${selectedTeamIdx === idx ? "bg-white/[0.04]" : "hover:bg-white/[0.02]"}`}
+                        style={{ borderBottom: "1px solid var(--card-border)" }}
+                        onClick={() => { setSelectedTeamIdx(idx); setExpandedTeamIdx(isExpanded ? null : idx); }}
+                      >
+                        <td className="px-3 py-2 text-gray-500 font-mono">{idx + 1}</td>
+                        <td className="px-2 py-2">
+                          <div className="flex gap-1">
+                            {team.constructors.map((c) => (
+                              <span key={c.id} className="inline-flex flex-col items-center px-1.5 py-0.5 rounded text-[9px] font-bold leading-tight" style={{ background: `${c.color}20`, color: c.color, border: `1px solid ${c.color}30` }}>
+                                <span>{c.ref_id.slice(0, 3).toUpperCase()}</span>
+                                <span className="text-[8px] font-mono opacity-70">{c.expected_pts?.toFixed(1) ?? "—"}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-2 py-2">
+                          <span className="inline-flex flex-col items-center px-1.5 py-0.5 rounded text-[9px] font-bold leading-tight" style={{ background: `${drsDriver.constructor_color}25`, color: drsDriver.constructor_color, border: `1px solid ${drsDriver.constructor_color}40` }}>
+                            <span>{drsDriver.code}</span>
+                            <span className="text-[8px] font-mono opacity-70">{drsDriver.expected_pts != null ? ((drsDriver.expected_pts * 2).toFixed(1)) : "—"}</span>
+                          </span>
+                        </td>
+                        <td className="px-2 py-2">
+                          <div className="flex gap-1 flex-wrap">
+                            {otherDrivers.map((d) => (
+                              <span key={d.id} className="inline-flex flex-col items-center px-1.5 py-0.5 rounded text-[9px] font-bold leading-tight" style={{ background: `${d.constructor_color}15`, color: d.constructor_color, border: `1px solid ${d.constructor_color}25` }}>
+                                <span>{d.code}</span>
+                                <span className="text-[8px] font-mono opacity-70">{d.expected_pts?.toFixed(1) ?? "—"}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        {showBestCols.cost && (
+                          <td className="px-2 py-2 text-right font-mono text-gray-300">{team.total_cost.toFixed(1)}</td>
+                        )}
+                        {showBestCols.xDelta && (
+                          <td className="px-2 py-2 text-right font-mono">
+                            <span className={teamXDelta > 0 ? "text-emerald-400" : teamXDelta < 0 ? "text-red-400" : "text-gray-600"}>
+                              {teamXDelta > 0 ? "+" : ""}{teamXDelta.toFixed(2)}
+                            </span>
+                          </td>
+                        )}
+                        {showBestCols.xPts && (
+                          <td className="px-2 py-2 text-right font-mono font-semibold text-emerald-400">{team.total_points.toFixed(1)}</td>
+                        )}
+                        <td className="px-1 py-2 text-center text-gray-600">
+                          <span className="text-[8px]">{isExpanded ? "\u25B2" : "\u2026"}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* ===== MIDDLE: Settings ===== */}
+        <div className="rounded-2xl overflow-hidden glass-card order-1 xl:order-2 xl:sticky xl:top-4 xl:self-start">
+          <div className="px-4 pt-4 pb-2">
+            <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400">Settings</h2>
+          </div>
+
+          {/* Simulation Controls */}
+          <div className="px-4 pb-3 space-y-3">
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-[10px] uppercase tracking-widest text-gray-600 font-semibold">Budget Cap</label>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm font-mono font-bold text-white">$</span>
+                  <input
+                    type="number"
+                    value={budget}
+                    onChange={(e) => setBudget(Number(e.target.value) || 100)}
+                    className="w-14 text-sm font-mono font-bold text-white bg-transparent text-right focus:outline-none"
+                    step={0.1}
+                    min={70}
+                    max={120}
+                  />
+                  <span className="text-xs text-gray-500">M</span>
+                </div>
+              </div>
+              <input
+                type="range" min={70} max={120} step={0.5} value={budget}
+                onChange={(e) => setBudget(Number(e.target.value))}
+                className="w-full h-1 rounded-full appearance-none cursor-pointer accent-red-600"
+                style={{ background: `linear-gradient(to right, #e10600 ${((budget - 70) / 50) * 100}%, #1e1e2e ${((budget - 70) / 50) * 100}%)` }}
+              />
+            </div>
+
+            {/* Simulations count */}
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-[10px] uppercase tracking-widest text-gray-600 font-semibold">Simulations</label>
+                <span className="text-xs font-mono font-bold text-white">{(nSimulations / 1000).toFixed(0)}K</span>
+              </div>
+              <input
+                type="range" min={1000} max={50000} step={1000} value={nSimulations}
+                onChange={(e) => setNSimulations(Number(e.target.value))}
+                className="w-full h-1 rounded-full appearance-none cursor-pointer accent-red-600"
+                style={{ background: `linear-gradient(to right, #e10600 ${((nSimulations - 1000) / 49000) * 100}%, #1e1e2e ${((nSimulations - 1000) / 49000) * 100}%)` }}
+              />
+            </div>
+
+            {/* DRS Booster */}
+            {hasSimData && (
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-gray-600 font-semibold block mb-1">DRS Booster</label>
+                <select
+                  value={drsDriverId ?? ""}
+                  onChange={(e) => setDrsDriverId(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full text-[11px] px-2.5 py-1.5 rounded-lg bg-transparent focus:outline-none cursor-pointer"
+                  style={{ border: "1px solid var(--card-border)", color: drsDriverId ? "#a855f7" : "#6b7280" }}
+                >
+                  <option value="">Auto (highest xPts)</option>
+                  {drivers.filter((d) => d.expected_pts != null).sort((a, b) => (b.expected_pts ?? 0) - (a.expected_pts ?? 0)).map((d) => (
+                    <option key={d.id} value={d.id}>{d.code} — {d.expected_pts?.toFixed(1)} xPts</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Active Filters */}
+          {activeFilters > 0 && (
+            <div className="mx-4 mb-3 p-2.5 rounded-lg space-y-1.5" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--card-border)" }}>
+              {(includeDrivers.size > 0 || includeConstructors.size > 0) && (
+                <div className="flex flex-wrap gap-1 items-center">
+                  <span className="text-[9px] text-emerald-500 font-bold uppercase mr-1">IN</span>
+                  {[...includeDrivers].map((id) => { const d = drivers.find((dr) => dr.id === id); return d ? <span key={id} className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>{d.code}</span> : null; })}
+                  {[...includeConstructors].map((id) => { const c = constructors.find((co) => co.id === id); return c ? <span key={id} className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e" }}>{c.name}</span> : null; })}
+                </div>
+              )}
+              {(excludeDrivers.size > 0 || excludeConstructors.size > 0) && (
+                <div className="flex flex-wrap gap-1 items-center">
+                  <span className="text-[9px] text-red-400 font-bold uppercase mr-1">OUT</span>
+                  {[...excludeDrivers].map((id) => { const d = drivers.find((dr) => dr.id === id); return d ? <span key={id} className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}>{d.code}</span> : null; })}
+                  {[...excludeConstructors].map((id) => { const c = constructors.find((co) => co.id === id); return c ? <span key={id} className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444" }}>{c.name}</span> : null; })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="px-4 pb-4 space-y-2">
+            <button
+              onClick={handleSimulate}
+              disabled={!selectedRaceId || simulating}
+              className="w-full py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:scale-[1.01] active:scale-[0.99]"
+              style={{
+                background: cachedStatus === "cached" ? "transparent" : selectedRaceId && !simulating ? "linear-gradient(135deg, #e10600, #b30500)" : "var(--card-border)",
+                color: "white",
+                border: cachedStatus === "cached" ? "1px solid var(--card-border)" : "none",
+                boxShadow: cachedStatus !== "cached" && selectedRaceId && !simulating ? "0 4px 20px rgba(225,6,0,0.3)" : "none",
+              }}
+            >
+              {simulating ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Simulating...
+                </span>
+              ) : (
+                <span className="flex items-center justify-center gap-1.5">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                  {cachedStatus === "cached" ? "Re-run Sim" : "Simulate"}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={handleFindBestTeams}
+              disabled={!selectedRaceId || !hasSimData || loading}
+              className="w-full py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:scale-[1.01] active:scale-[0.99]"
+              style={{
+                background: hasSimData ? "linear-gradient(135deg, #e10600, #b30500)" : "var(--card-border)",
+                color: "white",
+                boxShadow: hasSimData ? "0 4px 20px rgba(225,6,0,0.3)" : "none",
+              }}
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Optimizing...
+                </span>
+              ) : (
+                <span className="flex items-center justify-center gap-1.5">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                  Find Best Teams
+                </span>
+              )}
+            </button>
+            {!hasSimData && <p className="text-[9px] text-gray-600 text-center">Run simulation first</p>}
+
+            <button
+              onClick={() => {
+                setIncludeDrivers(new Set()); setExcludeDrivers(new Set());
+                setIncludeConstructors(new Set()); setExcludeConstructors(new Set());
+                setDrsDriverId(null); setBudget(100); setBestTeams([]);
+              }}
+              className="w-full py-1.5 rounded-lg text-[10px] text-gray-500 hover:text-gray-300 transition-colors flex items-center justify-center gap-1.5"
+              style={{ border: "1px solid var(--card-border)" }}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+              Full Reset
+            </button>
+          </div>
+
+          {/* Simulation Notes */}
+          {simMeta && (
+            <div className="px-4 pb-4 pt-2" style={{ borderTop: "1px solid var(--card-border)" }}>
+              <h4 className="text-[10px] uppercase tracking-widest text-gray-600 font-semibold mb-2">Notes</h4>
+              <p className="text-[10px] text-gray-500 leading-relaxed">
+                {simMeta.data_sources.length > 0
+                  ? `Using ${simMeta.data_sources.join(", ")} data for enhanced accuracy.`
+                  : "Dry/average conditions. A somewhat reasonable placeholder for now; equal-PPM and form are not super useful."}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* ===== RIGHT: Drivers + Constructors ===== */}
+        <div className="space-y-4 order-3">
+          {/* Drivers Table */}
+          <div className="rounded-2xl overflow-hidden glass-card">
+            <div className="px-3 pt-3 pb-1.5 flex items-center justify-between">
+              <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400">Drivers</h2>
+              <div className="flex items-center gap-1.5">
+                <div className="relative">
+                  <svg className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                  <input type="text" value={driverSearch} onChange={(e) => setDriverSearch(e.target.value)} placeholder="e.g. VER+NOR" className="text-[10px] pl-6 pr-2 py-1 rounded-md bg-transparent focus:outline-none placeholder-gray-600 w-28" style={{ border: "1px solid var(--card-border)" }} />
+                </div>
+                <div className="relative">
+                  <button onClick={() => setDriverColMenu(!driverColMenu)} className="text-[10px] px-2 py-1 rounded-md hover:bg-white/5 text-gray-500 flex items-center gap-1" style={{ border: "1px solid var(--card-border)" }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7m0-18H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7m0-18v18"/></svg>
+                    Columns
+                  </button>
+                  <ColumnMenu show={driverColMenu} cols={showDriverCols} setCols={(c) => setShowDriverCols(c as typeof showDriverCols)} onClose={() => setDriverColMenu(false)} />
+                </div>
+              </div>
+            </div>
+            <div className="overflow-x-auto" style={{ maxHeight: "45vh" }}>
+              <table className="w-full text-[10px] uppercase tracking-wider font-semibold text-gray-600">
+                <thead className="sticky top-0 z-10" style={{ background: "var(--card-bg)" }}>
+                  <tr style={{ borderBottom: "1px solid var(--card-border)" }}>
+                    <th className="px-3 py-2 text-left cursor-pointer hover:text-gray-300" onClick={() => setDriverSort(toggleSort(driverSort, "name"))}>
+                      <span className="inline-flex items-center gap-0.5">DR <span className="text-[7px] opacity-50">{driverSort.key === "name" ? (driverSort.dir === "desc" ? "\u25BC" : "\u25B2") : ""}</span></span>
+                    </th>
+                    {showDriverCols.price && <SortHeader sortState={driverSort} column="price" label="$" setSortFn={setDriverSort} />}
+                    {showDriverCols.xDelta && <SortHeader sortState={driverSort} column="xDelta" label="x&Delta;$" setSortFn={setDriverSort} tooltip="Predicted Price Change" />}
+                    {showDriverCols.xPts && <SortHeader sortState={driverSort} column="xPts" label="xPts" setSortFn={setDriverSort} tooltip="Expected Points from simulation" />}
+                    {showDriverCols.ppm && <SortHeader sortState={driverSort} column="ppm" label="PPM" setSortFn={setDriverSort} tooltip="Points Per Million" />}
+                    <th className="px-1 py-2 text-center w-14">
+                      <span className="text-[9px]">Incl</span>
+                    </th>
+                    <th className="px-1 py-2 text-center w-10">
+                      <span className="text-[9px]">Excl</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="text-xs normal-case tracking-normal font-normal">
                   {filteredDrivers.map((driver) => {
                     const prediction = getDriverPrediction(driver.id);
                     const sim = getSimResult("driver", driver.id);
                     const xDelta = prediction?.predicted_change ?? null;
                     const isIncluded = includeDrivers.has(driver.id);
                     const isExcluded = excludeDrivers.has(driver.id);
-                    const isDrsSelected = drsDriverId === driver.id;
 
                     return (
-                      <tr
-                        key={driver.id}
-                        className="transition-colors hover:bg-white/[0.02] group"
-                        style={{
-                          borderBottom: "1px solid var(--card-border)",
-                          opacity: isExcluded ? 0.35 : 1,
-                        }}
-                      >
-                        <td className="px-4 py-2.5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: driver.constructor_color }} />
-                            <div className="min-w-0">
-                              <div className="font-semibold text-sm text-white truncate">
-                                {driver.first_name} <span className="uppercase font-bold">{driver.last_name}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className="text-[10px] font-mono text-gray-500">{driver.code}</span>
-                                {driverTrends[driver.id] === "improving" && <span className="text-[9px]" style={{ color: "var(--neon-green)" }} title="Improving form">&#9650;</span>}
-                                {driverTrends[driver.id] === "declining" && <span className="text-[9px]" style={{ color: "var(--f1-red)" }} title="Declining form">&#9660;</span>}
-                                <span className="text-[10px] text-gray-700">#{driver.number}</span>
-                                <span className="text-[10px] text-gray-700">&middot;</span>
-                                <span className="text-[10px] text-gray-600">{driver.constructor_name}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          <span className="font-mono text-sm font-medium text-gray-200">${driver.price.toFixed(1)}M</span>
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          {driver.expected_pts != null ? (
-                            <div>
-                              <span className="font-mono text-sm font-semibold text-emerald-400">{driver.expected_pts.toFixed(1)}</span>
-                              {sim && (
-                                <div className="text-[9px] font-mono text-gray-600 mt-0.5">
-                                  {sim.expected_pts_p10.toFixed(0)}-{sim.expected_pts_p90.toFixed(0)}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="font-mono text-sm text-gray-700">&mdash;</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          {sim && sim.points_per_million > 0 ? (
-                            <span className="font-mono text-[11px] text-amber-400">{sim.points_per_million.toFixed(2)}</span>
-                          ) : (
-                            <span className="font-mono text-sm text-gray-700">&mdash;</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-mono text-sm">
-                          {xDelta !== null ? (
-                            <span className={xDelta > 0 ? "text-emerald-400" : xDelta < 0 ? "text-red-400" : "text-gray-600"}>
-                              {xDelta > 0 ? "+" : ""}{xDelta.toFixed(2)}
+                      <tr key={driver.id} className="transition-colors hover:bg-white/[0.02]" style={{ borderBottom: "1px solid var(--card-border)", opacity: isExcluded ? 0.35 : 1 }}>
+                        <td className="px-3 py-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="w-7 h-5 rounded text-[9px] font-bold flex items-center justify-center flex-shrink-0" style={{ background: `${driver.constructor_color}25`, color: driver.constructor_color, border: `1px solid ${driver.constructor_color}30` }}>
+                              {driver.code}
                             </span>
-                          ) : (
-                            <span className="text-gray-700">&mdash;</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => toggleIncludeDriver(driver.id)}
-                              className="w-6 h-6 rounded-md flex items-center justify-center transition-all hover:scale-110"
-                              style={{
-                                background: isIncluded ? "rgba(34,197,94,0.15)" : "transparent",
-                                border: `1.5px solid ${isIncluded ? "#22c55e" : "var(--card-border)"}`,
-                              }}
-                              title="Force include"
-                            >
-                              {isIncluded && (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                              )}
-                            </button>
-                            <button
-                              onClick={() => toggleExcludeDriver(driver.id)}
-                              className="w-6 h-6 rounded-md flex items-center justify-center transition-all hover:scale-110"
-                              style={{
-                                background: isExcluded ? "rgba(239,68,68,0.15)" : "transparent",
-                                border: `1.5px solid ${isExcluded ? "#ef4444" : "var(--card-border)"}`,
-                              }}
-                              title="Force exclude"
-                            >
-                              {isExcluded && (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                              )}
-                            </button>
+                            <span className="text-[10px] text-gray-500 truncate hidden sm:inline">{driver.last_name}</span>
+                            {driverTrends[driver.id] === "improving" && <span className="text-[8px]" style={{ color: "var(--neon-green)" }}>&#9650;</span>}
+                            {driverTrends[driver.id] === "declining" && <span className="text-[8px]" style={{ color: "var(--f1-red)" }}>&#9660;</span>}
                           </div>
                         </td>
-                        {hasSimData && (
-                          <td className="px-3 py-2.5 text-center">
-                            <button
-                              onClick={() => setDrsDriverId(isDrsSelected ? null : driver.id)}
-                              className="w-6 h-6 rounded-md flex items-center justify-center transition-all hover:scale-110 mx-auto"
-                              style={{
-                                background: isDrsSelected ? "rgba(168,85,247,0.2)" : "transparent",
-                                border: `1.5px solid ${isDrsSelected ? "#a855f7" : "var(--card-border)"}`,
-                              }}
-                              title="Lock as DRS booster (2x points)"
-                            >
-                              {isDrsSelected && (
-                                <span className="text-[8px] font-black text-purple-400">D</span>
-                              )}
-                            </button>
+                        {showDriverCols.price && (
+                          <td className="px-2 py-1.5 text-right font-mono text-gray-300">{driver.price.toFixed(1)}</td>
+                        )}
+                        {showDriverCols.xDelta && (
+                          <td className="px-2 py-1.5 text-right font-mono">
+                            {xDelta !== null ? (
+                              <span className={xDelta > 0 ? "text-emerald-400" : xDelta < 0 ? "text-red-400" : "text-gray-600"}>
+                                {xDelta > 0 ? "+" : ""}{xDelta.toFixed(2)}
+                              </span>
+                            ) : <span className="text-gray-700">—</span>}
                           </td>
                         )}
+                        {showDriverCols.xPts && (
+                          <td className="px-2 py-1.5 text-right">
+                            {driver.expected_pts != null ? (
+                              <span className="font-mono font-semibold text-emerald-400">{driver.expected_pts.toFixed(1)}</span>
+                            ) : <span className="font-mono text-gray-700">—</span>}
+                          </td>
+                        )}
+                        {showDriverCols.ppm && (
+                          <td className="px-2 py-1.5 text-right">
+                            {sim && sim.points_per_million > 0 ? (
+                              <span className="font-mono text-[10px] text-amber-400">{sim.points_per_million.toFixed(2)}</span>
+                            ) : <span className="font-mono text-gray-700">—</span>}
+                          </td>
+                        )}
+                        <td className="px-1 py-1.5 text-center">
+                          <button onClick={() => toggleIncludeDriver(driver.id)} className="w-5 h-5 rounded flex items-center justify-center transition-all hover:scale-110 mx-auto" style={{ background: isIncluded ? "rgba(34,197,94,0.15)" : "transparent", border: `1.5px solid ${isIncluded ? "#22c55e" : "var(--card-border)"}` }}>
+                            {isIncluded && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>}
+                          </button>
+                        </td>
+                        <td className="px-1 py-1.5 text-center">
+                          <button onClick={() => toggleExcludeDriver(driver.id)} className="w-5 h-5 rounded flex items-center justify-center transition-all hover:scale-110 mx-auto" style={{ background: isExcluded ? "rgba(239,68,68,0.15)" : "transparent", border: `1.5px solid ${isExcluded ? "#ef4444" : "var(--card-border)"}` }}>
+                            {isExcluded && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>}
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -534,43 +718,38 @@ export default function TeamCalculator() {
 
           {/* Constructors Table */}
           <div className="rounded-2xl overflow-hidden glass-card">
-            <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400">Constructors</h2>
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-mono" style={{ background: "var(--card-border)", color: "#6b7280" }}>
-                  {filteredConstructors.length}
-                </span>
-              </div>
-              <div className="relative">
-                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-600" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                <input
-                  type="text"
-                  value={constructorSearch}
-                  onChange={(e) => setConstructorSearch(e.target.value)}
-                  placeholder="Search teams..."
-                  className="text-xs pl-7 pr-3 py-1.5 rounded-lg bg-transparent focus:outline-none focus:ring-1 focus:ring-red-900/50 placeholder-gray-600 w-40"
-                  style={{ border: "1px solid var(--card-border)" }}
-                />
+            <div className="px-3 pt-3 pb-1.5 flex items-center justify-between">
+              <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400">Constructors</h2>
+              <div className="flex items-center gap-1.5">
+                <div className="relative">
+                  <svg className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-600" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                  <input type="text" value={constructorSearch} onChange={(e) => setConstructorSearch(e.target.value)} placeholder="e.g. RED+MCL" className="text-[10px] pl-6 pr-2 py-1 rounded-md bg-transparent focus:outline-none placeholder-gray-600 w-28" style={{ border: "1px solid var(--card-border)" }} />
+                </div>
+                <div className="relative">
+                  <button onClick={() => setConsColMenu(!consColMenu)} className="text-[10px] px-2 py-1 rounded-md hover:bg-white/5 text-gray-500 flex items-center gap-1" style={{ border: "1px solid var(--card-border)" }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7m0-18H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7m0-18v18"/></svg>
+                    Columns
+                  </button>
+                  <ColumnMenu show={consColMenu} cols={showConsCols} setCols={(c) => setShowConsCols(c as typeof showConsCols)} onClose={() => setConsColMenu(false)} />
+                </div>
               </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[11px] uppercase tracking-wider font-semibold text-gray-600">
-                <thead>
+            <div className="overflow-x-auto" style={{ maxHeight: "35vh" }}>
+              <table className="w-full text-[10px] uppercase tracking-wider font-semibold text-gray-600">
+                <thead className="sticky top-0 z-10" style={{ background: "var(--card-bg)" }}>
                   <tr style={{ borderBottom: "1px solid var(--card-border)" }}>
-                    <th className="px-4 py-3 text-left cursor-pointer hover:text-gray-300 transition-colors" onClick={() => setConstructorSort(toggleSort(constructorSort, "name"))}>
-                      <span className="inline-flex items-center gap-1">
-                        Constructor
-                        <span className="text-[8px] opacity-50">{constructorSort.key === "name" ? (constructorSort.dir === "desc" ? "\u25BC" : "\u25B2") : ""}</span>
-                      </span>
+                    <th className="px-3 py-2 text-left cursor-pointer hover:text-gray-300" onClick={() => setConstructorSort(toggleSort(constructorSort, "name"))}>
+                      <span className="inline-flex items-center gap-0.5">CR <span className="text-[7px] opacity-50">{constructorSort.key === "name" ? (constructorSort.dir === "desc" ? "\u25BC" : "\u25B2") : ""}</span></span>
                     </th>
-                    <SortHeader sortState={constructorSort} column="price" label="Price" setSortFn={setConstructorSort} />
-                    <SortHeader sortState={constructorSort} column="xPts" label="xPts" setSortFn={setConstructorSort} tooltip="Expected Points — average predicted score from 50,000 Monte Carlo simulations" />
-                    <SortHeader sortState={constructorSort} column="ppm" label="PPM" setSortFn={setConstructorSort} tooltip="Points Per Million — expected points divided by price. Higher = better value" />
-                    <SortHeader sortState={constructorSort} column="xDelta" label="x&Delta;$" setSortFn={setConstructorSort} tooltip="Predicted Price Change — expected price movement based on performance vs current price" />
-                    <th className="px-3 py-3 text-center w-24">Lock</th>
+                    {showConsCols.price && <SortHeader sortState={constructorSort} column="price" label="$" setSortFn={setConstructorSort} />}
+                    {showConsCols.xDelta && <SortHeader sortState={constructorSort} column="xDelta" label="x&Delta;$" setSortFn={setConstructorSort} tooltip="Predicted Price Change" />}
+                    {showConsCols.xPts && <SortHeader sortState={constructorSort} column="xPts" label="xPts" setSortFn={setConstructorSort} tooltip="Expected Points from simulation" />}
+                    {showConsCols.ppm && <SortHeader sortState={constructorSort} column="ppm" label="PPM" setSortFn={setConstructorSort} tooltip="Points Per Million" />}
+                    <th className="px-1 py-2 text-center w-14"><span className="text-[9px]">Incl</span></th>
+                    <th className="px-1 py-2 text-center w-10"><span className="text-[9px]">Excl</span></th>
                   </tr>
                 </thead>
-                <tbody className="text-sm normal-case tracking-normal font-normal">
+                <tbody className="text-xs normal-case tracking-normal font-normal">
                   {filteredConstructors.map((c) => {
                     const prediction = getConstructorPrediction(c.id);
                     const sim = getSimResult("constructor", c.id);
@@ -578,91 +757,45 @@ export default function TeamCalculator() {
                     const isIncluded = includeConstructors.has(c.id);
                     const isExcluded = excludeConstructors.has(c.id);
                     return (
-                      <tr
-                        key={c.id}
-                        className="transition-colors hover:bg-white/[0.02]"
-                        style={{
-                          borderBottom: "1px solid var(--card-border)",
-                          opacity: isExcluded ? 0.35 : 1,
-                        }}
-                      >
-                        <td className="px-4 py-2.5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: c.color }} />
-                            <div>
-                              <span className="font-semibold text-sm text-white">{c.name}</span>
-                              <div className="flex items-center gap-1 mt-0.5">
-                                {c.driver_codes.map((code, i) => (
-                                  <span key={code} className="text-[10px] font-mono text-gray-500">
-                                    {code}{i < c.driver_codes.length - 1 ? <span className="text-gray-700 mx-0.5">/</span> : ""}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          <span className="font-mono text-sm font-medium text-gray-200">${c.price.toFixed(1)}M</span>
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          {c.expected_pts != null ? (
-                            <div>
-                              <span className="font-mono text-sm font-semibold text-emerald-400">{c.expected_pts.toFixed(1)}</span>
-                              {sim && (
-                                <div className="text-[9px] font-mono text-gray-600 mt-0.5">
-                                  {sim.expected_pts_p10.toFixed(0)}-{sim.expected_pts_p90.toFixed(0)}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="font-mono text-sm text-gray-700">&mdash;</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          {sim && sim.points_per_million > 0 ? (
-                            <span className="font-mono text-[11px] text-amber-400">{sim.points_per_million.toFixed(2)}</span>
-                          ) : (
-                            <span className="font-mono text-sm text-gray-700">&mdash;</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-mono text-sm">
-                          {xDelta !== null ? (
-                            <span className={xDelta > 0 ? "text-emerald-400" : xDelta < 0 ? "text-red-400" : "text-gray-600"}>
-                              {xDelta > 0 ? "+" : ""}{xDelta.toFixed(2)}
+                      <tr key={c.id} className="transition-colors hover:bg-white/[0.02]" style={{ borderBottom: "1px solid var(--card-border)", opacity: isExcluded ? 0.35 : 1 }}>
+                        <td className="px-3 py-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="w-7 h-5 rounded text-[9px] font-bold flex items-center justify-center flex-shrink-0" style={{ background: `${c.color}25`, color: c.color, border: `1px solid ${c.color}30` }}>
+                              {c.ref_id.slice(0, 3).toUpperCase()}
                             </span>
-                          ) : (
-                            <span className="text-gray-700">&mdash;</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => toggleIncludeConstructor(c.id)}
-                              className="w-6 h-6 rounded-md flex items-center justify-center transition-all hover:scale-110"
-                              style={{
-                                background: isIncluded ? "rgba(34,197,94,0.15)" : "transparent",
-                                border: `1.5px solid ${isIncluded ? "#22c55e" : "var(--card-border)"}`,
-                              }}
-                              title="Force include"
-                            >
-                              {isIncluded && (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-                              )}
-                            </button>
-                            <button
-                              onClick={() => toggleExcludeConstructor(c.id)}
-                              className="w-6 h-6 rounded-md flex items-center justify-center transition-all hover:scale-110"
-                              style={{
-                                background: isExcluded ? "rgba(239,68,68,0.15)" : "transparent",
-                                border: `1.5px solid ${isExcluded ? "#ef4444" : "var(--card-border)"}`,
-                              }}
-                              title="Force exclude"
-                            >
-                              {isExcluded && (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                              )}
-                            </button>
                           </div>
+                        </td>
+                        {showConsCols.price && <td className="px-2 py-1.5 text-right font-mono text-gray-300">{c.price.toFixed(1)}</td>}
+                        {showConsCols.xDelta && (
+                          <td className="px-2 py-1.5 text-right font-mono">
+                            {xDelta !== null ? (
+                              <span className={xDelta > 0 ? "text-emerald-400" : xDelta < 0 ? "text-red-400" : "text-gray-600"}>{xDelta > 0 ? "+" : ""}{xDelta.toFixed(2)}</span>
+                            ) : <span className="text-gray-700">—</span>}
+                          </td>
+                        )}
+                        {showConsCols.xPts && (
+                          <td className="px-2 py-1.5 text-right">
+                            {c.expected_pts != null ? (
+                              <span className="font-mono font-semibold text-emerald-400">{c.expected_pts.toFixed(1)}</span>
+                            ) : <span className="font-mono text-gray-700">—</span>}
+                          </td>
+                        )}
+                        {showConsCols.ppm && (
+                          <td className="px-2 py-1.5 text-right">
+                            {sim && sim.points_per_million > 0 ? (
+                              <span className="font-mono text-[10px] text-amber-400">{sim.points_per_million.toFixed(2)}</span>
+                            ) : <span className="font-mono text-gray-700">—</span>}
+                          </td>
+                        )}
+                        <td className="px-1 py-1.5 text-center">
+                          <button onClick={() => toggleIncludeConstructor(c.id)} className="w-5 h-5 rounded flex items-center justify-center transition-all hover:scale-110 mx-auto" style={{ background: isIncluded ? "rgba(34,197,94,0.15)" : "transparent", border: `1.5px solid ${isIncluded ? "#22c55e" : "var(--card-border)"}` }}>
+                            {isIncluded && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>}
+                          </button>
+                        </td>
+                        <td className="px-1 py-1.5 text-center">
+                          <button onClick={() => toggleExcludeConstructor(c.id)} className="w-5 h-5 rounded flex items-center justify-center transition-all hover:scale-110 mx-auto" style={{ background: isExcluded ? "rgba(239,68,68,0.15)" : "transparent", border: `1.5px solid ${isExcluded ? "#ef4444" : "var(--card-border)"}` }}>
+                            {isExcluded && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>}
+                          </button>
                         </td>
                       </tr>
                     );
@@ -672,389 +805,7 @@ export default function TeamCalculator() {
             </div>
           </div>
         </div>
-
-        {/* Right Sidebar — Optimizer Panel */}
-        <div className="space-y-4">
-          <div className="rounded-2xl overflow-hidden sticky top-8 glass-card">
-            {/* Optimizer Header */}
-            <div className="px-5 pt-5 pb-3">
-              <h3 className="text-sm font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
-                Optimizer
-              </h3>
-            </div>
-
-            {/* Budget Slider */}
-            <div className="px-5 pb-3">
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-gray-600 font-semibold">Budget Cap</label>
-                <span className="text-sm font-mono font-bold text-white">${budget}M</span>
-              </div>
-              <input
-                type="range"
-                min={70}
-                max={120}
-                step={0.5}
-                value={budget}
-                onChange={(e) => setBudget(Number(e.target.value))}
-                className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-red-600"
-                style={{ background: `linear-gradient(to right, #e10600 ${((budget - 70) / 50) * 100}%, #1e1e2e ${((budget - 70) / 50) * 100}%)` }}
-              />
-              <div className="flex justify-between text-[9px] text-gray-700 mt-0.5">
-                <span>$70M</span>
-                <span>$120M</span>
-              </div>
-            </div>
-
-            {/* Simulation Count */}
-            <div className="px-5 pb-3">
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="text-[10px] uppercase tracking-widest text-gray-600 font-semibold">Simulations</label>
-                <span className="text-sm font-mono font-bold text-white">{(nSimulations / 1000).toFixed(0)}K</span>
-              </div>
-              <input
-                type="range"
-                min={1000}
-                max={50000}
-                step={1000}
-                value={nSimulations}
-                onChange={(e) => setNSimulations(Number(e.target.value))}
-                className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-red-600"
-                style={{ background: `linear-gradient(to right, #e10600 ${((nSimulations - 1000) / 49000) * 100}%, #1e1e2e ${((nSimulations - 1000) / 49000) * 100}%)` }}
-              />
-              <div className="flex justify-between text-[9px] text-gray-700 mt-0.5">
-                <span>1K (fast)</span>
-                <span>50K (precise)</span>
-              </div>
-            </div>
-
-            {/* DRS Driver Lock */}
-            {hasSimData && (
-              <div className="px-5 pb-3">
-                <label className="text-[10px] uppercase tracking-widest text-gray-600 font-semibold block mb-1.5">DRS Booster</label>
-                <select
-                  value={drsDriverId ?? ""}
-                  onChange={(e) => setDrsDriverId(e.target.value ? Number(e.target.value) : null)}
-                  className="w-full text-xs px-3 py-2 rounded-lg bg-transparent focus:outline-none focus:ring-1 focus:ring-purple-900/50 cursor-pointer"
-                  style={{ border: "1px solid var(--card-border)", color: drsDriverId ? "#a855f7" : "#6b7280" }}
-                >
-                  <option value="">Auto (highest xPts)</option>
-                  {drivers
-                    .filter((d) => d.expected_pts != null)
-                    .sort((a, b) => (b.expected_pts ?? 0) - (a.expected_pts ?? 0))
-                    .map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.code} - {d.first_name} {d.last_name} ({d.expected_pts?.toFixed(1)} xPts)
-                      </option>
-                    ))}
-                </select>
-              </div>
-            )}
-
-            {/* Active Filters */}
-            {activeFilters > 0 && (
-              <div className="mx-5 mb-3 p-3 rounded-xl space-y-2" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--card-border)" }}>
-                {(includeDrivers.size > 0 || includeConstructors.size > 0) && (
-                  <div className="flex flex-wrap gap-1 items-center">
-                    <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-wider mr-1">IN</span>
-                    {[...includeDrivers].map((id) => {
-                      const d = drivers.find((dr) => dr.id === id);
-                      return d ? (
-                        <span key={id} className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)" }}>
-                          {d.code}
-                        </span>
-                      ) : null;
-                    })}
-                    {[...includeConstructors].map((id) => {
-                      const c = constructors.find((co) => co.id === id);
-                      return c ? (
-                        <span key={id} className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)" }}>
-                          {c.name}
-                        </span>
-                      ) : null;
-                    })}
-                  </div>
-                )}
-                {(excludeDrivers.size > 0 || excludeConstructors.size > 0) && (
-                  <div className="flex flex-wrap gap-1 items-center">
-                    <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider mr-1">OUT</span>
-                    {[...excludeDrivers].map((id) => {
-                      const d = drivers.find((dr) => dr.id === id);
-                      return d ? (
-                        <span key={id} className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium" style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}>
-                          {d.code}
-                        </span>
-                      ) : null;
-                    })}
-                    {[...excludeConstructors].map((id) => {
-                      const c = constructors.find((co) => co.id === id);
-                      return c ? (
-                        <span key={id} className="text-[10px] px-1.5 py-0.5 rounded font-mono font-medium" style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}>
-                          {c.name}
-                        </span>
-                      ) : null;
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Find Best Teams Button */}
-            <div className="px-5 pb-5">
-              <button
-                onClick={handleFindBestTeams}
-                disabled={!selectedRaceId || !hasSimData || loading}
-                className="w-full py-3.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed hover:scale-[1.01] active:scale-[0.99]"
-                style={{
-                  background: hasSimData
-                    ? "linear-gradient(135deg, #e10600, #b30500)"
-                    : "var(--card-border)",
-                  color: "white",
-                  boxShadow: hasSimData ? "0 4px 20px rgba(225,6,0,0.3)" : "none",
-                }}
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Optimizing...
-                  </span>
-                ) : (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
-                    Find Best Teams
-                  </span>
-                )}
-              </button>
-              {!hasSimData && (
-                <p className="text-[10px] text-gray-600 text-center mt-2">Run simulation first</p>
-              )}
-            </div>
-
-            {/* Top Performers Summary */}
-            {simResults.length > 0 && (
-              <div className="px-5 pb-5 pt-2" style={{ borderTop: "1px solid var(--card-border)" }}>
-                <h4 className="text-[10px] uppercase tracking-widest text-gray-600 font-semibold mb-3">Top Performers</h4>
-                <div className="space-y-0.5">
-                  {simResults
-                    .filter((r) => r.asset_type === "driver")
-                    .sort((a, b) => b.expected_pts_mean - a.expected_pts_mean)
-                    .slice(0, 5)
-                    .map((r, i) => {
-                      const driver = drivers.find((d) => d.id === r.asset_id);
-                      return (
-                        <div key={`d-${r.asset_id}`} className="flex justify-between items-center text-xs py-1.5 px-2 rounded-lg hover:bg-white/[0.02] transition-colors">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-gray-600 font-mono w-4">{i + 1}.</span>
-                            {driver && <div className="w-1 h-4 rounded-full" style={{ backgroundColor: driver.constructor_color }} />}
-                            <span className="text-gray-300 font-medium">{r.asset_name}</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="font-mono text-emerald-400 font-semibold">{r.expected_pts_mean.toFixed(1)}</span>
-                            <span className="font-mono text-[10px] text-amber-400/70">{r.points_per_million.toFixed(2)}/M</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
-
-      {/* Best Teams Results */}
-      <AnimatePresence>
-        {bestTeams.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="space-y-4"
-          >
-            <div className="flex items-center gap-3">
-              <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400">Optimal Teams</h2>
-              <div className="flex-1 h-px" style={{ background: "var(--card-border)" }} />
-              <span className="text-[10px] text-gray-600 font-mono">Top {bestTeams.length}</span>
-            </div>
-
-            {/* Team Selector Tabs */}
-            <div className="flex gap-1 overflow-x-auto pb-1">
-              {bestTeams.map((_, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setSelectedTeamIdx(idx)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex-shrink-0"
-                  style={{
-                    background: selectedTeamIdx === idx
-                      ? idx === 0 ? "var(--f1-red)" : "var(--card-border)"
-                      : "transparent",
-                    color: selectedTeamIdx === idx ? "white" : "#6b7280",
-                    border: `1px solid ${selectedTeamIdx === idx ? (idx === 0 ? "var(--f1-red)" : "var(--card-border)") : "transparent"}`,
-                  }}
-                >
-                  #{idx + 1}
-                </button>
-              ))}
-            </div>
-
-            {/* Selected Team Detail */}
-            {bestTeams[selectedTeamIdx] && (() => {
-              const team = bestTeams[selectedTeamIdx];
-              return (
-                <motion.div
-                  key={selectedTeamIdx}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="rounded-2xl overflow-hidden relative"
-                  style={{ background: "var(--card-bg)", border: `1px solid ${selectedTeamIdx === 0 ? "rgba(225,6,0,0.3)" : "var(--card-border)"}` }}
-                >
-                  {selectedTeamIdx === 0 && <div className="absolute top-0 left-0 w-full h-[2px]" style={{ background: "linear-gradient(to right, #e10600, transparent)" }} />}
-
-                  {/* Team Summary Bar */}
-                  <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--card-border)" }}>
-                    <div className="flex items-center gap-4">
-                      <span
-                        className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black"
-                        style={{
-                          background: selectedTeamIdx === 0 ? "linear-gradient(135deg, #e10600, #b30500)" : "var(--card-border)",
-                          color: "white",
-                          boxShadow: selectedTeamIdx === 0 ? "0 2px 12px rgba(225,6,0,0.3)" : "none",
-                        }}
-                      >
-                        {selectedTeamIdx + 1}
-                      </span>
-                      <div>
-                        <span className="text-2xl font-black font-mono text-emerald-400">
-                          {team.total_points.toFixed(1)}
-                        </span>
-                        <span className="text-xs text-gray-500 ml-1.5">expected points</span>
-                      </div>
-                    </div>
-                    <div className="flex gap-6 text-xs font-mono">
-                      <div className="text-right">
-                        <div className="text-gray-500 text-[10px] uppercase tracking-wider">Cost</div>
-                        <div className="text-gray-300 font-semibold">${team.total_cost.toFixed(1)}M</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-gray-500 text-[10px] uppercase tracking-wider">Remaining</div>
-                        <div className="text-emerald-400 font-semibold">${team.budget_remaining.toFixed(1)}M</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Team Grid */}
-                  <div className="p-5">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {team.drivers.map((d) => {
-                        const isDrs = team.drs_driver.id === d.id;
-                        return (
-                          <div
-                            key={d.id}
-                            className="rounded-xl p-3.5 relative overflow-hidden transition-all hover:scale-[1.02]"
-                            style={{
-                              background: `linear-gradient(135deg, ${d.constructor_color}08, ${d.constructor_color}03)`,
-                              border: `1px solid ${d.constructor_color}25`,
-                            }}
-                          >
-                            <div className="absolute top-0 left-0 w-full h-[2px]" style={{ background: d.constructor_color }} />
-                            {isDrs && (
-                              <div className="absolute top-2.5 right-2.5">
-                                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md" style={{ background: "rgba(168,85,247,0.2)", color: "#a855f7", border: "1px solid rgba(168,85,247,0.3)" }}>
-                                  DRS 2x
-                                </span>
-                              </div>
-                            )}
-                            <div className="flex items-center gap-2 mb-2">
-                              <div className="w-1 h-6 rounded-full" style={{ backgroundColor: d.constructor_color }} />
-                              <div>
-                                <div className="text-xs font-bold text-white">{d.first_name} <span className="uppercase">{d.last_name}</span></div>
-                                <div className="text-[10px] text-gray-500">{d.constructor_name}</div>
-                              </div>
-                            </div>
-                            <div className="flex items-center justify-between mt-2">
-                              <span className="font-mono text-xs text-gray-400">${d.price.toFixed(1)}M</span>
-                              {d.expected_pts != null && (
-                                <span className="font-mono text-sm font-bold text-emerald-400">
-                                  {isDrs ? (d.expected_pts * 2).toFixed(1) : d.expected_pts.toFixed(1)}
-                                  <span className="text-[9px] text-gray-600 ml-0.5">pts</span>
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {team.constructors.map((c) => (
-                        <div
-                          key={c.id}
-                          className="rounded-xl p-3.5 relative overflow-hidden transition-all hover:scale-[1.02]"
-                          style={{
-                            background: `linear-gradient(135deg, ${c.color}08, ${c.color}03)`,
-                            border: `1px solid ${c.color}25`,
-                          }}
-                        >
-                          <div className="absolute top-0 left-0 w-full h-[2px]" style={{ background: c.color }} />
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="w-1 h-6 rounded-full" style={{ backgroundColor: c.color }} />
-                            <div>
-                              <div className="text-xs font-bold text-white">{c.name}</div>
-                              <div className="text-[10px] text-gray-500">{c.driver_codes.join(" / ")}</div>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between mt-2">
-                            <span className="font-mono text-xs text-gray-400">${c.price.toFixed(1)}M</span>
-                            {c.expected_pts != null && (
-                              <span className="font-mono text-sm font-bold text-emerald-400">
-                                {c.expected_pts.toFixed(1)}
-                                <span className="text-[9px] text-gray-600 ml-0.5">pts</span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })()}
-
-            {/* Compact list of other teams */}
-            <div className="space-y-2">
-              {bestTeams.map((team, idx) => {
-                if (idx === selectedTeamIdx) return null;
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => setSelectedTeamIdx(idx)}
-                    className="w-full rounded-xl p-3 flex items-center justify-between transition-all hover:bg-white/[0.02] glass-card"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold" style={{ background: "var(--card-border)", color: "#6b7280" }}>
-                        {idx + 1}
-                      </span>
-                      <div className="flex gap-1.5">
-                        {team.drivers.map((d) => (
-                          <span key={d.id} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: `${d.constructor_color}15`, color: d.constructor_color, border: `1px solid ${d.constructor_color}25` }}>
-                            {d.code}{team.drs_driver.id === d.id ? "*" : ""}
-                          </span>
-                        ))}
-                        {team.constructors.map((c) => (
-                          <span key={c.id} className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: `${c.color}15`, color: c.color, border: `1px solid ${c.color}25` }}>
-                            {c.ref_id}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs font-mono">
-                      <span className="text-emerald-400 font-bold">{team.total_points.toFixed(1)}</span>
-                      <span className="text-gray-600">${team.total_cost.toFixed(1)}M</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

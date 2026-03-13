@@ -33,13 +33,22 @@ export default function SpeedTrapChart({
   loading = false,
 }: SpeedTrapChartProps) {
   if (loading) return <ChartSkeleton />;
+  if (data.length === 0 && (!data2 || data2.length === 0)) {
+    return (
+      <div className="w-full h-64 flex items-center justify-center text-gray-500 text-sm">
+        No speed trap data available
+      </div>
+    );
+  }
 
-  // Merge by trap_name (not index) to handle different ordering
+  // Merge by trap_name (not index) to handle different ordering and mismatched traps
+  const data1Map = new Map(data.map((t) => [t.trap_name, t.speed]));
   const data2Map = new Map(data2?.map((t) => [t.trap_name, t.speed]));
-  const chartData = data.map((trap) => ({
-    trap_name: trap.trap_name,
-    speed1: trap.speed,
-    speed2: data2Map.get(trap.trap_name),
+  const allTrapNames = new Set([...data.map((t) => t.trap_name), ...(data2 || []).map((t) => t.trap_name)]);
+  const chartData = Array.from(allTrapNames).map((trap_name) => ({
+    trap_name,
+    speed1: data1Map.get(trap_name),
+    speed2: data2Map.get(trap_name),
   }));
 
   return (

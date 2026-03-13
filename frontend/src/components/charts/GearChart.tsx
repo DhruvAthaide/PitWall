@@ -29,6 +29,13 @@ interface GearChartProps {
 
 export default function GearChart({ data, loading = false }: GearChartProps) {
   if (loading) return <ChartSkeleton />;
+  if (data.length === 0) {
+    return (
+      <div className="w-full h-64 flex items-center justify-center text-gray-500 text-sm">
+        No gear distribution data available
+      </div>
+    );
+  }
 
   const chartData = data.map((d) => ({
     name: `Gear ${d.gear}`,

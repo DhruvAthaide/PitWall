@@ -25,6 +25,13 @@ class OptimalTeam:
     budget_remaining: float
 
 
+# Small epsilon to use as tiebreaker: prefer spending more budget when points
+# are equal.  Each $1M of spend adds 0.001 pts to the sort key, so a $100M
+# team gets +0.1 — far too small to override a real 1-pt difference but
+# enough to break ties deterministically in favour of pricier rosters.
+_COST_TIEBREAKER_WEIGHT = 0.001
+
+
 def find_best_teams(
     drivers: list[Asset],
     constructors: list[Asset],
@@ -58,8 +65,8 @@ def find_best_teams(
     # Sort constructor combos by cost ascending for early pruning
     valid_c_combos.sort(key=lambda x: x[1])
 
-    best_teams: list[tuple[float, OptimalTeam]] = []
-    min_score = float("-inf")
+    best_teams: list[tuple[float, float, OptimalTeam]] = []  # (sort_key, total_pts, team)
+    min_sort_key = float("-inf")
 
     for d_combo in combinations(avail_drivers, 5):
         d_ids = {d.id for d in d_combo}
@@ -83,7 +90,10 @@ def find_best_teams(
 
             total_pts = d_pts + c_pts + drs_bonus
 
-            if len(best_teams) >= top_n and total_pts <= min_score:
+            # Sort key: points first, then prefer higher spend as tiebreaker
+            sort_key = total_pts + total_cost * _COST_TIEBREAKER_WEIGHT
+
+            if len(best_teams) >= top_n and sort_key <= min_sort_key:
                 continue
 
             team = OptimalTeam(
@@ -95,10 +105,10 @@ def find_best_teams(
                 budget_remaining=round(budget - total_cost, 2),
             )
 
-            best_teams.append((total_pts, team))
+            best_teams.append((sort_key, total_pts, team))
             best_teams.sort(key=lambda x: x[0], reverse=True)
             if len(best_teams) > top_n:
                 best_teams.pop()
-                min_score = best_teams[-1][0]
+                min_sort_key = best_teams[-1][0]
 
-    return [t for _, t in best_teams]
+    return [t for _, _, t in best_teams]

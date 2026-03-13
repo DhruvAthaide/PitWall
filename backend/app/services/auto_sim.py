@@ -9,6 +9,8 @@ Handles:
 """
 
 import asyncio
+import hashlib
+import json
 import logging
 from datetime import datetime, date, timezone, timedelta
 from sqlalchemy.orm import Session
@@ -57,6 +59,7 @@ def _circuit_similarity(c1: Circuit, c2: Circuit) -> float:
         c2.avg_degradation or 0.5,
     ]
     dist = math.sqrt(sum((a - b) ** 2 for a, b in zip(traits1, traits2)))
+    # Similarity ranges from ~0.5 (very different) to 1.5 (identical)
     return 1.5 - (dist / 2.0)
 
 
@@ -107,6 +110,7 @@ def _compute_history_adjustments(
                 "weighted_pos_gained": 0.0, "total_weight": 0.0,
                 "race_finish_weight": 0.0, "dnf_weighted": 0.0,
                 "fl_weighted": 0.0, "total_races": 0,
+                "recent_positions": [],  # for form trend
             }
 
         rounds_ago = race.round - race_round_map[r.race_id]
@@ -122,10 +126,14 @@ def _compute_history_adjustments(
 
         if r.dnf:
             s["dnf_weighted"] += weight
+            # DNF does NOT count toward race pace / positions gained
+            # Track the DNF for trend purposes but mark it
+            s["recent_positions"].append((rounds_ago, None))
         else:
             s["weighted_race"] += (r.race_position or 22) * weight
             s["race_finish_weight"] += weight
             s["weighted_pos_gained"] += ((r.qualifying_position or 22) - (r.race_position or 22)) * weight
+            s["recent_positions"].append((rounds_ago, r.race_position or 22))
 
         if r.fastest_lap:
             s["fl_weighted"] += weight
@@ -134,24 +142,56 @@ def _compute_history_adjustments(
     for driver_id, s in driver_stats.items():
         tw = s["total_weight"]
         avg_quali = s["weighted_quali"] / tw if tw > 0 else 11.5
+
+        # qpace_std shrinks as we have more data (more confident)
         effective_n = tw
         qpace_std = max(1.5, 4.0 / (1 + effective_n * 0.3))
 
+        # DNF percentage with Bayesian prior (prior_weight pulls toward 6% baseline)
         prior_weight = 1.5
         dnf_pct = (s["dnf_weighted"] + prior_weight * 0.06) / (tw + prior_weight)
+
+        # Fastest lap percentage with Bayesian prior
         base_fl = 1 / 22
         fl_pct = (s["fl_weighted"] + prior_weight * base_fl) / (tw + prior_weight)
 
+        # Avg positions gained (only from races where driver finished)
         rfw = s["race_finish_weight"]
         avg_pos_gained = s["weighted_pos_gained"] / rfw if rfw > 0 else 0.0
 
+        # Form trend: compare recent races vs older races
+        # Positive = improving, negative = declining
+        form_trend = 0.0
+        finished_positions = [(ago, pos) for ago, pos in s["recent_positions"] if pos is not None]
+        if len(finished_positions) >= 3:
+            # Split into recent half and older half
+            finished_positions.sort(key=lambda x: x[0])  # sort by recency (lower = more recent)
+            mid = len(finished_positions) // 2
+            recent_avg = sum(pos for _, pos in finished_positions[:mid]) / mid
+            older_avg = sum(pos for _, pos in finished_positions[mid:]) / (len(finished_positions) - mid)
+            # Positive form_trend means improving (lower recent position = better)
+            form_trend = older_avg - recent_avg
+
+        # Apply form trend to qpace_mean: improving drivers get a small boost
+        # Each position of improvement shifts qpace by 0.3
+        form_adjustment = form_trend * 0.3
+        adjusted_qpace = avg_quali - form_adjustment
+        # Clamp to reasonable range
+        adjusted_qpace = max(1.0, min(22.0, adjusted_qpace))
+
         adjustments[driver_id] = {
-            "qpace_mean": round(avg_quali, 2),
+            "qpace_mean": round(adjusted_qpace, 2),
             "qpace_std": round(qpace_std, 2),
             "dnf_pct": round(dnf_pct, 4),
             "fl_pct": round(fl_pct, 4),
             "avg_pos_gained": round(avg_pos_gained, 2),
+            "form_trend": round(form_trend, 2),
         }
+
+    logger.info(
+        "History adjustments computed for %d drivers from %d prior races",
+        len(adjustments), len(prior_races),
+    )
 
     return adjustments
 
@@ -174,17 +214,39 @@ def _build_driver_params(
             defaults = DRIVER_DEFAULTS.get(d.code, {
                 "dnf_pct": 0.06, "fl_pct": 1/22, "avg_pos_gained": 0.3,
             })
+
+            # Use history for avg_pos_gained and dnf_pct if available
             avg_pg = hist["avg_pos_gained"] if hist else defaults.get("avg_pos_gained", 0.3)
+            dnf_prob = dp.dnf_probability
+            fl_prob = dp.fl_probability
+
+            # Blend history dnf_pct with practice-derived value (history is more reliable)
+            if hist:
+                dnf_prob = hist["dnf_pct"] * 0.7 + dp.dnf_probability * 0.3
+                fl_prob = hist["fl_pct"] * 0.5 + dp.fl_probability * 0.5
+
+            # Use rpace data to derive avg_positions_gained when available
+            # If rpace_mean < qpace_mean, driver tends to gain positions in the race
+            if dp.rpace_mean and dp.qpace_mean and dp.rpace_mean != dp.qpace_mean:
+                pace_delta = dp.qpace_mean - dp.rpace_mean  # positive = gains positions
+                # Blend practice-derived pace delta with history
+                if hist:
+                    avg_pg = hist["avg_pos_gained"] * 0.5 + pace_delta * 0.5
+                else:
+                    avg_pg = defaults.get("avg_pos_gained", 0.3) * 0.4 + pace_delta * 0.6
+
+            logger.debug("Using practice data for %s (sources: %s)", d.code, dp.data_sources)
             params.append(DriverParams(
                 id=d.id, code=d.code,
                 constructor_ref=constructor.ref_id if constructor else "",
                 qpace_mean=dp.qpace_mean, qpace_std=dp.qpace_std,
-                dnf_probability=dp.dnf_probability,
-                fl_probability=dp.fl_probability,
+                dnf_probability=dnf_prob,
+                fl_probability=fl_prob,
                 avg_positions_gained=avg_pg, grid_penalty=penalty,
             ))
         elif history_adjustments and d.id in history_adjustments:
             hist = history_adjustments[d.id]
+            logger.debug("Using history adjustments for %s (form_trend: %+.2f)", d.code, hist.get("form_trend", 0))
             params.append(DriverParams(
                 id=d.id, code=d.code,
                 constructor_ref=constructor.ref_id if constructor else "",
@@ -194,9 +256,10 @@ def _build_driver_params(
             ))
         else:
             defaults = DRIVER_DEFAULTS.get(d.code, {
-                "qpace_mean": 12.0, "qpace_std": 4.0,
-                "dnf_pct": 0.06, "fl_pct": 1/22, "avg_pos_gained": 0.3,
+                "qpace_mean": 12.0, "qpace_std": 2.5,
+                "dnf_pct": 0.06, "fl_pct": 0.02, "avg_pos_gained": 0.1,
             })
+            logger.debug("Using static defaults for %s", d.code)
             params.append(DriverParams(
                 id=d.id, code=d.code,
                 constructor_ref=constructor.ref_id if constructor else "",
@@ -204,6 +267,20 @@ def _build_driver_params(
                 dnf_probability=defaults["dnf_pct"], fl_probability=defaults["fl_pct"],
                 avg_positions_gained=defaults["avg_pos_gained"], grid_penalty=penalty,
             ))
+
+    # Log summary counts
+    practice_count = sum(1 for d in drivers if dynamic_params and d.code in dynamic_params)
+    history_count = sum(
+        1 for d in drivers
+        if (not dynamic_params or d.code not in dynamic_params)
+        and history_adjustments and d.id in history_adjustments
+    )
+    default_count = len(drivers) - practice_count - history_count
+    logger.info(
+        "Driver params: %d from practice, %d from history, %d from defaults",
+        practice_count, history_count, default_count,
+    )
+
     return params
 
 
@@ -373,7 +450,7 @@ async def run_auto_simulation(
                         "rainfall": w.rainfall,
                     }
             except Exception as e:
-                logger.warning(f"Failed to fetch session metadata: {e}")
+                logger.warning("Failed to fetch session metadata: %s", e)
 
             if practice_data:
                 dynamic_params = calculate_dynamic_params(
@@ -383,13 +460,14 @@ async def run_auto_simulation(
                 for dp in dynamic_params.values():
                     all_sources.update(dp.data_sources)
                 data_sources_summary = sorted(all_sources)
+                logger.info("Practice data available for %d drivers", len(dynamic_params))
         except Exception as e:
-            logger.warning(f"Failed to fetch practice data: {e}. Falling back to defaults.")
+            logger.warning("Failed to fetch practice data: %s. Falling back to defaults.", e)
 
     # History adjustments
     history_adjustments = _compute_history_adjustments(db, race, target_circuit=circuit)
     if history_adjustments:
-        logger.info(f"Using previous results from {len(history_adjustments)} drivers")
+        logger.info("History adjustments available for %d drivers", len(history_adjustments))
         if "previous_results" not in data_sources_summary:
             data_sources_summary.append("previous_results")
 
@@ -425,7 +503,7 @@ async def run_auto_simulation(
         db.rollback()
         raise
 
-    logger.info(f"Simulated {race.name} ({n_simulations} iterations, sources: {data_sources_summary})")
+    logger.info("Simulated %s (%d iterations, sources: %s)", race.name, n_simulations, data_sources_summary)
 
     meta = {
         "data_sources": data_sources_summary,
@@ -461,6 +539,9 @@ async def auto_ingest_results(db: Session) -> list[dict]:
         .all()
     )
 
+    # Build driver_map once on the main thread (thread-safe read from SQLite)
+    driver_map = {d.code: d.id for d in db.query(Driver).all()}
+
     ingestion_log = []
     for race in past_races:
         existing = db.query(RaceResult).filter_by(race_id=race.id).first()
@@ -473,10 +554,12 @@ async def auto_ingest_results(db: Session) -> list[dict]:
         try:
             year = int(race.date[:4]) if race.date else 2026
             meeting_name = race.name.replace(" Grand Prix", "")
-            # Build driver_map on the main thread to avoid SQLite thread-safety issues
-            from app.models import Driver as DriverModel
-            _driver_map = {d.code: d.id for d in db.query(DriverModel).all()}
-            ingested = await asyncio.to_thread(fetch_race_results, year, meeting_name, driver_map=_driver_map)
+
+            # Run fetch_race_results in a thread with only serializable args
+            # (no DB session) — it returns data, caller writes to DB
+            ingested = await asyncio.to_thread(
+                fetch_race_results, year, meeting_name, driver_map=driver_map,
+            )
 
             if ingested is None:
                 ingestion_log.append({
@@ -484,6 +567,7 @@ async def auto_ingest_results(db: Session) -> list[dict]:
                 })
                 continue
 
+            # Write results to DB on the main (async) thread
             for r in ingested:
                 db.add(RaceResult(
                     race_id=race.id,
@@ -497,13 +581,14 @@ async def auto_ingest_results(db: Session) -> list[dict]:
                 ))
             db.commit()
 
-            logger.info(f"Auto-ingested {len(ingested)} driver results for {race.name}")
+            logger.info("Auto-ingested %d driver results for %s", len(ingested), race.name)
             ingestion_log.append({
                 "race_name": race.name, "status": "ingested",
                 "driver_count": len(ingested),
             })
         except Exception as e:
-            logger.warning(f"Failed to auto-ingest results for {race.name}: {e}")
+            db.rollback()
+            logger.warning("Failed to auto-ingest results for %s: %s", race.name, e)
             ingestion_log.append({
                 "race_name": race.name, "status": "error", "error": str(e),
             })

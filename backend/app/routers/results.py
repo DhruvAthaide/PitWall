@@ -7,7 +7,8 @@ from app.database import get_db
 from app.models import RaceResult, Race, Driver, Constructor, SimulationResult, FantasyPrice
 from app.simulation.scoring import (
     score_qualifying_driver, score_race_position, FASTEST_LAP_PTS,
-    DRIVER_OF_THE_DAY_PTS, RACE_DNF_PENALTY,
+    DRIVER_OF_THE_DAY_PTS, RACE_DNF_PENALTY, POSITIONS_CHANGE_MULTIPLIER,
+    OVERTAKE_PTS,
 )
 
 router = APIRouter(prefix="/api/results", tags=["results"])
@@ -118,9 +119,11 @@ def get_scorecard(race_id: int, db: Session = Depends(get_db)):
         # Compute actual fantasy points
         q_pts = score_qualifying_driver(r.qualifying_position)
         r_pts = 0 if r.dnf else score_race_position(r.race_position)
-        positions_gained = (r.qualifying_position - r.race_position) if not r.dnf and r.qualifying_position is not None and r.race_position is not None else 0
-        pos_pts = positions_gained  # +1 per position gained, -1 per lost
-        ot_pts = r.overtakes
+        # Positions gained/lost: +2 per gained, -2 per lost (grid start vs finish)
+        grid_start = getattr(r, 'grid_start', None) or r.qualifying_position
+        positions_gained = (grid_start - r.race_position) if not r.dnf and grid_start is not None and r.race_position is not None else 0
+        pos_pts = positions_gained * POSITIONS_CHANGE_MULTIPLIER
+        ot_pts = (r.overtakes or 0) * OVERTAKE_PTS
         fl_pts = FASTEST_LAP_PTS if r.fastest_lap else 0
         dotd_pts = DRIVER_OF_THE_DAY_PTS if r.dotd else 0
         dnf_pen = RACE_DNF_PENALTY if r.dnf else 0

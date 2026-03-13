@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  LineChart,
   Line,
   XAxis,
   YAxis,
@@ -44,6 +43,13 @@ export default function TelemetryTraceChart({
   loading = false,
 }: TelemetryTraceChartProps) {
   if (loading) return <ChartSkeleton />;
+  if (data.length === 0 && (!data2 || data2.length === 0)) {
+    return (
+      <div className="w-full h-64 flex items-center justify-center text-gray-500 text-sm">
+        No telemetry data available
+      </div>
+    );
+  }
 
   let merged: MergedTelemetry[];
 

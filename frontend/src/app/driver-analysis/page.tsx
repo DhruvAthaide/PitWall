@@ -453,6 +453,16 @@ function GraphsTab({
   // Clear stale data when race/session/driver changes
   useEffect(() => {
     setHasLoaded(false);
+    setLapTimes([]);
+    setSectors([]);
+    setSpeedTrace([]);
+    setTireStrategy([]);
+    setPositions([]);
+    setTelemetry([]);
+    setGears([]);
+    setSpeedTraps([]);
+    setDistribution(null);
+    setDegradation([]);
   }, [raceEvent, sessionType, selectedDriver]);
 
   const loadData = async () => {
@@ -635,10 +645,26 @@ function CompareTab({
   const [speedTraps1, setSpeedTraps1] = useState<SpeedTrap[]>([]);
   const [speedTraps2, setSpeedTraps2] = useState<SpeedTrap[]>([]);
 
+  // Clear stale data when race/session/drivers change
+  useEffect(() => {
+    setHasLoaded(false);
+    setLapTimes1([]); setLapTimes2([]);
+    setSpeed1([]); setSpeed2([]);
+    setSectors1([]); setSectors2([]);
+    setPos1([]); setPos2([]);
+    setStints1([]); setStints2([]);
+    setTel1([]); setTel2([]);
+    setGap([]);
+    setSpeedTraps1([]); setSpeedTraps2([]);
+  }, [raceEvent, sessionType, driver1, driver2]);
+
   const d1 = drivers.find((d) => d.code === driver1);
   const d2 = drivers.find((d) => d.code === driver2);
-  const color1 = d1?.constructor_color || "#e10600";
-  const color2 = d2?.constructor_color || "#00d2ff";
+  const rawColor1 = d1?.constructor_color || "#e10600";
+  const rawColor2 = d2?.constructor_color || "#00d2ff";
+  // If both drivers share the same team color, differentiate with a fallback
+  const color1 = rawColor1;
+  const color2 = rawColor1 === rawColor2 ? "#00d2ff" : rawColor2;
 
   const loadCompare = async () => {
     if (!driver1 || !driver2 || !raceEvent) return;

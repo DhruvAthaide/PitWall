@@ -35,6 +35,13 @@ export default function PositionChart({
   loading = false,
 }: PositionChartProps) {
   if (loading) return <ChartSkeleton />;
+  if (data.length === 0 && (!data2 || data2.length === 0)) {
+    return (
+      <div className="w-full h-64 flex items-center justify-center text-gray-500 text-sm">
+        No position data available
+      </div>
+    );
+  }
 
   const merged: MergedPosition[] = [];
   const lapMap = new Map<number, MergedPosition>();

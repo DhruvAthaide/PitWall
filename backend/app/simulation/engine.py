@@ -4,14 +4,17 @@ import numpy as np
 from dataclasses import dataclass, field
 from .scoring import (
     score_qualifying_driver,
+    score_sprint_qualifying_driver,
     score_race_position,
     score_sprint_position,
+    score_positions_changed,
     score_constructor_qualifying_progression,
     FASTEST_LAP_PTS,
-    SPRINT_FASTEST_LAP_PTS,
     DRIVER_OF_THE_DAY_PTS,
     RACE_DNF_PENALTY,
     SPRINT_DNF_PENALTY,
+    BEAT_TEAMMATE_PTS,
+    OVERTAKE_PTS,
 )
 
 
@@ -90,19 +93,26 @@ def simulate_race_weekend(
         for did in c.driver_ids:
             constructor_driver_map[did] = c.id
 
-    # [A2] Constructor correlation: map constructor_ref -> driver indices
+    # Constructor correlation: map constructor_ref -> driver indices
     constructor_ref_to_indices: dict[str, list[int]] = {}
     for i, d in enumerate(drivers):
         constructor_ref_to_indices.setdefault(d.constructor_ref, []).append(i)
 
-    # [A2] Pre-generate car pace offsets per constructor per simulation
+    # Build teammate map: driver index -> teammate index
+    teammate_map: dict[int, int] = {}
+    for ref_id, indices in constructor_ref_to_indices.items():
+        if len(indices) == 2:
+            teammate_map[indices[0]] = indices[1]
+            teammate_map[indices[1]] = indices[0]
+
+    # Pre-generate car pace offsets per constructor per simulation
     car_std_map = {c.ref_id: c.car_pace_std for c in constructors}
     car_offsets: dict[str, np.ndarray] = {}
     for ref_id in constructor_ref_to_indices:
         std = car_std_map.get(ref_id, 1.5)
         car_offsets[ref_id] = rng.normal(0, std, size=n_simulations)
 
-    # [A5] Wet weather multipliers
+    # Wet weather multipliers
     q_std_mult = weather.quali_std_multiplier if weather.is_wet else 1.0
     r_noise_mult = weather.race_noise_multiplier if weather.is_wet else 1.0
     dnf_mult = weather.dnf_multiplier if weather.is_wet else 1.0
@@ -114,14 +124,14 @@ def simulate_race_weekend(
         size=(n_simulations, n_drivers),
     )
     race_noise = rng.normal(
-        loc=0, scale=[d.qpace_std * 1.2 * r_noise_mult for d in drivers],
+        loc=0, scale=[d.qpace_std * 0.6 * r_noise_mult for d in drivers],
         size=(n_simulations, n_drivers),
     )
     dnf_rolls = rng.random(size=(n_simulations, n_drivers))
     fl_rolls = rng.random(size=n_simulations)
     dotd_rolls = rng.random(size=n_simulations)
 
-    # [A3] Safety car rolls
+    # Safety car rolls
     sc_probability = 0.55 if not circuit.street_circuit else 0.45
     sc_rolls = rng.random(size=n_simulations)
 
@@ -129,7 +139,7 @@ def simulate_race_weekend(
 
     for sim in range(n_simulations):
         # === QUALIFYING ===
-        # [A2] Apply constructor car offset to qualifying samples
+        # Apply constructor car offset to qualifying samples
         raw_quali = quali_samples[sim].copy()
         for ref_id, indices in constructor_ref_to_indices.items():
             offset = car_offsets[ref_id][sim]
@@ -154,21 +164,21 @@ def simulate_race_weekend(
         is_dnf = np.zeros(n_drivers, dtype=bool)
 
         for i, d in enumerate(drivers):
-            # [A5] Wet weather increases DNF probability
+            # Wet weather increases DNF probability
             effective_dnf = d.dnf_probability * dnf_mult
             if dnf_rolls[sim, i] < effective_dnf:
                 is_dnf[i] = True
                 continue
 
-            # [A1] Grid-based race positions: start from grid, apply delta
+            # Grid-based race positions: start from grid, apply delta
             delta_mean = -d.avg_positions_gained * overtake_ease
             race_raw[i] = grid_positions[i] + delta_mean + race_noise[sim, i]
 
-        # [A3] Safety car: compress field by adding mild noise and re-shuffling
+        # Safety car: compress field by adding mild noise and re-shuffling
         active_indices = np.where(~is_dnf)[0]
         if len(active_indices) > 0:
             if not is_sprint and sc_rolls[sim] < sc_probability:
-                sc_noise = rng.normal(0, 1.5, size=len(active_indices))
+                sc_noise = rng.normal(0, 0.8, size=len(active_indices))
                 race_raw[active_indices] += sc_noise
 
             # Resolve final race positions among active drivers
@@ -177,16 +187,31 @@ def simulate_race_weekend(
             for rank, order_idx in enumerate(active_order):
                 race_positions[active_indices[order_idx]] = rank + 1
 
-        # === FASTEST LAP ===
-        fl_weights = np.array([d.fl_probability if not is_dnf[i] else 0 for i, d in enumerate(drivers)])
-        total_w = fl_weights.sum()
-        if total_w > 0:
-            fl_weights /= total_w
-            cumsum = np.cumsum(fl_weights)
-            fl_idx = np.searchsorted(cumsum, fl_rolls[sim])
-            fl_idx = min(fl_idx, n_drivers - 1)
-        else:
-            fl_idx = 0
+        # === FASTEST LAP (race only, must finish in points P1-P10) ===
+        fl_idx = -1
+        if not is_sprint:
+            fl_weights = np.zeros(n_drivers)
+            for i, d in enumerate(drivers):
+                if is_dnf[i]:
+                    continue
+                r_pos = int(race_positions[i])
+                # Only drivers finishing in points (P1-P10) are eligible
+                if r_pos > 10:
+                    continue
+                if r_pos <= 5:
+                    pos_factor = 3.0
+                else:
+                    pos_factor = 1.5
+                fl_weights[i] = d.fl_probability * pos_factor
+            total_w = fl_weights.sum()
+            if total_w > 0:
+                fl_weights /= total_w
+                cumsum = np.cumsum(fl_weights)
+                fl_idx = int(np.searchsorted(cumsum, fl_rolls[sim]))
+                fl_idx = min(fl_idx, n_drivers - 1)
+                # Double-check eligibility
+                if is_dnf[fl_idx] or race_positions[fl_idx] > 10:
+                    fl_idx = -1
 
         # === DRIVER OF THE DAY (race only, not sprint) ===
         dotd_idx = -1
@@ -195,16 +220,23 @@ def simulate_race_weekend(
             for i in range(n_drivers):
                 if is_dnf[i]:
                     continue
-                pos_gain = int(quali_positions[i]) - int(race_positions[i])
-                weight = max(0.1, pos_gain + 2.0)
-                if race_positions[i] <= 3:
-                    weight += 3.0
+                r_pos = int(race_positions[i])
+                pos_gain = int(grid_positions[i]) - r_pos
+                # Biggest movers get high weight; positions gained is the main factor
+                mover_weight = max(0.0, pos_gain) ** 1.5
+                # Race winner and podium get a bonus
+                finish_weight = max(0.0, (n_drivers - r_pos) / n_drivers)
+                if r_pos == 1:
+                    finish_weight += 2.0
+                elif r_pos <= 3:
+                    finish_weight += 1.0
+                weight = mover_weight + finish_weight + 0.1
                 dotd_weights[i] = weight
             total_dw = dotd_weights.sum()
             if total_dw > 0:
                 dotd_weights /= total_dw
                 dotd_cumsum = np.cumsum(dotd_weights)
-                dotd_idx = np.searchsorted(dotd_cumsum, dotd_rolls[sim])
+                dotd_idx = int(np.searchsorted(dotd_cumsum, dotd_rolls[sim]))
                 dotd_idx = min(dotd_idx, n_drivers - 1)
 
         # === SCORE DRIVERS ===
@@ -212,33 +244,55 @@ def simulate_race_weekend(
             pts = 0.0
             q_pos = int(quali_positions[i])
 
-            pts += score_qualifying_driver(q_pos)
+            # Qualifying points (halved for sprint weekends)
+            if is_sprint:
+                pts += score_sprint_qualifying_driver(q_pos)
+            else:
+                pts += score_qualifying_driver(q_pos)
+
+            # Beat teammate in qualifying (+2 pts)
+            if i in teammate_map:
+                tm_idx = teammate_map[i]
+                if q_pos < int(quali_positions[tm_idx]):
+                    pts += BEAT_TEAMMATE_PTS
 
             if is_dnf[i]:
                 pts += SPRINT_DNF_PENALTY if is_sprint else RACE_DNF_PENALTY
             else:
                 r_pos = int(race_positions[i])
+                g_pos = int(grid_positions[i])
 
                 if is_sprint:
                     pts += score_sprint_position(r_pos)
                 else:
                     pts += score_race_position(r_pos)
 
-                # Positions gained/lost (quali position vs finish, per official rules)
-                pos_change = q_pos - r_pos
-                pts += pos_change
+                # Positions gained/lost: +2 per gained, -2 per lost (grid start vs finish)
+                pts += score_positions_changed(g_pos, r_pos)
 
-                # Overtakes: fraction of positions gained through on-track passes
+                # Overtakes: +1 per overtake (estimated from positions gained)
+                pos_change = g_pos - r_pos
                 if pos_change > 0:
-                    overtake_ratio = 0.5 + overtake_ease * 0.3
+                    overtake_ratio = 0.4 + overtake_ease * 0.4
                     estimated_overtakes = max(0, int(round(pos_change * overtake_ratio)))
-                    pts += estimated_overtakes
+                    pts += estimated_overtakes * OVERTAKE_PTS
 
+                # Fastest lap (race only, must be in points P1-P10)
                 if i == fl_idx:
-                    pts += SPRINT_FASTEST_LAP_PTS if is_sprint else FASTEST_LAP_PTS
+                    pts += FASTEST_LAP_PTS
 
+                # Driver of the Day (race only)
                 if not is_sprint and i == dotd_idx:
                     pts += DRIVER_OF_THE_DAY_PTS
+
+                # Beat teammate in race/sprint (+2 pts)
+                if i in teammate_map:
+                    tm_idx = teammate_map[i]
+                    if is_dnf[tm_idx]:
+                        # Teammate DNF'd, we finished = we beat them
+                        pts += BEAT_TEAMMATE_PTS
+                    elif r_pos < int(race_positions[tm_idx]):
+                        pts += BEAT_TEAMMATE_PTS
 
             driver_points[d.id][sim] = pts
 
@@ -254,28 +308,39 @@ def simulate_race_weekend(
             q0 = int(quali_positions[d0])
             q1 = int(quali_positions[d1])
 
-            c_pts += score_qualifying_driver(q0) + score_qualifying_driver(q1)
+            # Constructor qualifying points (halved for sprint weekends)
+            if is_sprint:
+                c_pts += score_sprint_qualifying_driver(q0) + score_sprint_qualifying_driver(q1)
+            else:
+                c_pts += score_qualifying_driver(q0) + score_qualifying_driver(q1)
+
+            # Constructor qualifying progression bonus
             c_pts += score_constructor_qualifying_progression(q0, q1)
 
+            # Race/sprint scoring for each driver
             for di in [d0, d1]:
                 if is_dnf[di]:
                     c_pts += SPRINT_DNF_PENALTY if is_sprint else RACE_DNF_PENALTY
                 else:
                     r_pos = int(race_positions[di])
+                    g_pos = int(grid_positions[di])
 
                     if is_sprint:
                         c_pts += score_sprint_position(r_pos)
                     else:
                         c_pts += score_race_position(r_pos)
 
-                    pos_change = int(quali_positions[di]) - r_pos
-                    c_pts += pos_change
+                    # Positions gained/lost: +2 per gained, -2 per lost
+                    c_pts += score_positions_changed(g_pos, r_pos)
 
+                    # Overtakes: +1 per overtake
+                    pos_change = g_pos - r_pos
                     if pos_change > 0:
-                        overtake_ratio = 0.5 + overtake_ease * 0.3
+                        overtake_ratio = 0.4 + overtake_ease * 0.4
                         estimated_overtakes = max(0, int(round(pos_change * overtake_ratio)))
-                        c_pts += estimated_overtakes
+                        c_pts += estimated_overtakes * OVERTAKE_PTS
 
+            # Pitstop points (race only)
             if not is_sprint:
                 c_pts += c.expected_pitstop_pts
 

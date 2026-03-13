@@ -25,27 +25,6 @@ export default function LapDistributionChart({ data, loading = false }: LapDistr
     return mins > 0 ? `${mins}:${secs.padStart(6, "0")}` : `${secs}s`;
   };
 
-  // Build custom box plot data
-  const boxData = [
-    {
-      name: "Lap Times",
-      min: data.whisker_low,
-      q1: data.q1,
-      median: data.median,
-      q3: data.q3,
-      max: data.whisker_high,
-      // bar from Q1 to Q3
-      barBase: data.q1,
-      barHeight: data.q3 - data.q1,
-    },
-  ];
-
-  const outlierData = data.outliers.map((val, i) => ({
-    name: `Outlier ${i + 1}`,
-    x: 0,
-    y: val,
-  }));
-
   return (
     <div className="w-full">
       <div className="flex flex-col items-center gap-4">
@@ -54,14 +33,9 @@ export default function LapDistributionChart({ data, loading = false }: LapDistr
           <div className="relative h-48 flex items-center justify-center">
             {/* Vertical scale */}
             <div className="relative w-24 h-full flex flex-col justify-between items-center">
-              {/* Whisker line (full) */}
+              {/* Whisker line (full height) */}
               <div
-                className="absolute left-1/2 -translate-x-1/2 w-px bg-gray-400"
-                style={{
-                  top: `${((data.whisker_high - data.whisker_high) / (data.whisker_high - data.whisker_low + 0.001)) * 100}%`,
-                  bottom: `${((data.whisker_low - data.whisker_low) / (data.whisker_high - data.whisker_low + 0.001)) * 100}%`,
-                  height: "100%",
-                }}
+                className="absolute left-1/2 -translate-x-1/2 w-px bg-gray-400 top-0 bottom-0"
               />
               {/* Whisker top cap */}
               <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-px bg-gray-400" />

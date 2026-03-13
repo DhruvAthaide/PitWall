@@ -20,12 +20,19 @@ interface SectorTimesChartProps {
 
 export default function SectorTimesChart({ data, loading = false }: SectorTimesChartProps) {
   if (loading) return <ChartSkeleton />;
+  if (data.length === 0) {
+    return (
+      <div className="w-full h-64 flex items-center justify-center text-gray-500 text-sm">
+        No sector time data available
+      </div>
+    );
+  }
 
   const chartData = data.map((p) => ({
     lap_number: p.lap_number,
-    S1: p.s1,
-    S2: p.s2,
-    S3: p.s3,
+    S1: p.s1 ?? 0,
+    S2: p.s2 ?? 0,
+    S3: p.s3 ?? 0,
   }));
 
   return (
