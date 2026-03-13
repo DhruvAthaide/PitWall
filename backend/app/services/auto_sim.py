@@ -161,6 +161,13 @@ def _compute_history_adjustments(
         tw = s["total_weight"]
         avg_quali = s["weighted_quali"] / tw if tw > 0 else 11.5
 
+        # Race finishing position is a better measure of true pace than
+        # qualifying alone (grid penalties, red flags, etc. distort quali).
+        # Blend quali (40%) with race finish (60%) for a more robust estimate.
+        rfw = s["race_finish_weight"]
+        avg_race = s["weighted_race"] / rfw if rfw > 0 else avg_quali
+        pace_estimate = avg_quali * 0.4 + avg_race * 0.6
+
         # qpace_std shrinks as we have more data (more confident)
         effective_n = tw
         qpace_std = max(1.5, 4.0 / (1 + effective_n * 0.3))
@@ -174,8 +181,10 @@ def _compute_history_adjustments(
         fl_pct = (s["fl_weighted"] + prior_weight * base_fl) / (tw + prior_weight)
 
         # Avg positions gained (only from races where driver finished)
-        rfw = s["race_finish_weight"]
-        avg_pos_gained = s["weighted_pos_gained"] / rfw if rfw > 0 else 0.0
+        # Capped to [-5, 5] — extreme values from single races (e.g., grid
+        # penalties causing +14) distort predictions unrealistically.
+        raw_pg = s["weighted_pos_gained"] / rfw if rfw > 0 else 0.0
+        avg_pos_gained = max(-5.0, min(5.0, raw_pg))
 
         # Form trend: compare recent races vs older races
         # Positive = improving, negative = declining
@@ -190,10 +199,10 @@ def _compute_history_adjustments(
             # Positive form_trend means improving (lower recent position = better)
             form_trend = older_avg - recent_avg
 
-        # Apply form trend to qpace_mean: improving drivers get a small boost
+        # Apply form trend to pace estimate: improving drivers get a small boost
         # Each position of improvement shifts qpace by 0.3
         form_adjustment = form_trend * 0.3
-        adjusted_qpace = avg_quali - form_adjustment
+        adjusted_qpace = pace_estimate - form_adjustment
         # Clamp to reasonable range
         adjusted_qpace = max(1.0, min(22.0, adjusted_qpace))
 
@@ -297,7 +306,10 @@ def _build_driver_params(
             blended_std = defaults["qpace_std"] * def_weight + hist["qpace_std"] * hist_weight
             blended_dnf = defaults["dnf_pct"] * def_weight + hist["dnf_pct"] * hist_weight
             blended_fl = defaults["fl_pct"] * def_weight + hist["fl_pct"] * hist_weight
-            blended_pg = defaults["avg_pos_gained"] * def_weight + hist["avg_pos_gained"] * hist_weight
+            # avg_pos_gained is very noisy from few races (grid penalties, SC, etc.)
+            # so we use half the history weight to lean more on defaults
+            pg_hist_w = hist_weight * 0.5
+            blended_pg = defaults["avg_pos_gained"] * (1.0 - pg_hist_w) + hist["avg_pos_gained"] * pg_hist_w
 
             logger.debug(
                 "Blended history+defaults for %s: qpace=%.2f (hist=%.2f def=%.2f w=%.0f%%) form=%+.2f",
